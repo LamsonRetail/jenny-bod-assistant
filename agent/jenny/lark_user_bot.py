@@ -258,8 +258,8 @@ def _p2p_chats() -> list[dict]:
                      "anh/chị nhắn em bất cứ lúc nào ạ!")
             mapping[oid] = chat_id
             conv = db.get_or_create_conversation("lark", chat_id, None, False)
-            if oid in _admin_ids():
-                db.set_whitelisted(conv["id"], True)
+            # nằm trong danh sách p2p partners = đã được cấp quyền chat riêng
+            db.set_whitelisted(conv["id"], True)
             changed = True
             log.info("Mở p2p chat với %s → %s", oid, chat_id)
         except Exception as e:
