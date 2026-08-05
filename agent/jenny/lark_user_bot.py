@@ -210,6 +210,7 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str) -> None:
             sender_context += f" (open_id: {sender_id})"
     except Exception:
         log.exception("Tra hồ sơ người hỏi lỗi")
+    sender_context = (sender_context + f" · chat_id hiện tại: {chat_id}").strip(" ·")
 
     history = db.recent_messages(conv["id"], config.MAX_HISTORY_MESSAGES)[:-1]
     system_prompt = agent.build_system_prompt(chat.get("name"), is_group, channel="Lark")

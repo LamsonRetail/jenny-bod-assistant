@@ -89,6 +89,11 @@ def save_markdown(subfolder: str, filename: str, content: str) -> dict:
     try:
         cfg = _setup()
         token = _upload(cfg["folders"][subfolder], filename, content.encode("utf-8"))
+        try:  # đồng bộ sang NotebookLM (nền, best-effort)
+            from . import nblm
+            nblm.push_markdown(f"{subfolder}/{filename}", content)
+        except Exception:
+            pass
         return {"status": "uploaded", "location": f"lark-drive:{subfolder}/{filename}",
                 "file_token": token}
     except Exception as e:

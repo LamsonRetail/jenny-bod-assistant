@@ -51,6 +51,8 @@ ALLOWED_TOOLS = ["WebSearch", "WebFetch",
                  "mcp__lark__org_lookup", "mcp__lark__person_note_save",
                  "mcp__lark__meeting_list_pending", "mcp__lark__meeting_save_draft",
                  "mcp__lark__meeting_finalize",
+                 "mcp__lark__notebooklm_ask", "mcp__lark__notebooklm_add_source",
+                 "mcp__lark__notebooklm_audio_overview",
                  "mcp__lark__memory_save", "mcp__lark__memory_index", "mcp__lark__memory_read"]
 DISALLOWED_TOOLS = ["Bash", "Write", "Edit", "NotebookEdit", "Task"]
 

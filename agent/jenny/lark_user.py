@@ -297,6 +297,25 @@ def download_minutes_media(url_or_token: str) -> tuple[bytes, str]:
     return r.content, r.headers.get("content-type", "audio/mp4").split(";")[0]
 
 
+def send_file(chat_id: str, path: str) -> None:
+    """Upload file rồi gửi vào chat (dùng cho audio/podcast, tài liệu)."""
+    from pathlib import Path as _P
+    name = _P(path).name
+    with open(path, "rb") as f:
+        r = _http.post(f"{BASE}/im/v1/files",
+                       data={"file_type": "stream", "file_name": name},
+                       files={"file": (name, f)},
+                       headers={"Authorization": f"Bearer {access_token()}"},
+                       timeout=300).json()
+    if r.get("code") != 0:
+        raise RuntimeError(f"Upload file Lark lỗi: {r.get('code')} {r.get('msg')}")
+    file_key = r["data"]["file_key"]
+    _post("/im/v1/messages", {
+        "receive_id": chat_id, "msg_type": "file",
+        "content": json.dumps({"file_key": file_key}),
+    }, params={"receive_id_type": "chat_id"})
+
+
 def download_file(file_token: str) -> bytes:
     r = _http.get(f"{BASE}/drive/v1/files/{file_token}/download",
                   headers={"Authorization": f"Bearer {access_token()}"},

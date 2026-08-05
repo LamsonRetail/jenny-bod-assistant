@@ -314,6 +314,76 @@ async def recent_resources(args: dict) -> dict:
         return _err(e)
 
 
+# ---------- NotebookLM (Gemini Notebook) ----------
+
+@tool("notebooklm_ask",
+      "Hỏi đáp dựa trên notebook tri thức của LSR trên NotebookLM (nguồn: meeting notes, "
+      "báo cáo, tài liệu đã đồng bộ). Dùng khi câu hỏi cần tổng hợp sâu từ nhiều tài liệu "
+      "nội bộ đã tích lũy. Trả lời có căn cứ theo nguồn trong notebook.",
+      {"question": str})
+async def notebooklm_ask(args: dict) -> dict:
+    try:
+        from . import nblm
+        answer = await nblm.ask(args["question"])
+        return _text(answer)
+    except Exception as e:
+        return _err(e)
+
+
+@tool("notebooklm_add_source",
+      "Thêm 1 nguồn vào notebook tri thức: url (trang web/tài liệu công khai) hoặc "
+      "text (nội dung markdown, kèm title). Truyền MỘT trong hai.",
+      {"url": str, "title": str, "text": str})
+async def notebooklm_add_source(args: dict) -> dict:
+    try:
+        from . import nblm
+        if (args.get("url") or "").strip():
+            await nblm.add_url_source(args["url"].strip())
+            return _text(f"Đã thêm nguồn: {args['url']}")
+        if (args.get("text") or "").strip():
+            await nblm.add_markdown_source(args.get("title") or "Tài liệu", args["text"])
+            return _text("Đã thêm nguồn text vào notebook.")
+        return _text("Cần truyền url hoặc text.")
+    except Exception as e:
+        return _err(e)
+
+
+@tool("notebooklm_audio_overview",
+      "Tạo Audio Overview (podcast 2 giọng thảo luận) từ notebook tri thức và gửi file "
+      "vào chat hiện tại. Mất 5-15 phút — tool trả về ngay, file gửi sau khi xong. "
+      "chat_id lấy từ bối cảnh hội thoại. instructions: định hướng nội dung (tùy chọn).",
+      {"chat_id": str, "instructions": str})
+async def notebooklm_audio_overview(args: dict) -> dict:
+    chat_id = (args.get("chat_id") or "").strip()
+    if not chat_id:
+        return _text("Thiếu chat_id.")
+
+    def _run() -> None:
+        import asyncio as aio
+        import tempfile
+
+        from . import lark_user, nblm
+        out = tempfile.mktemp(suffix=".m4a", prefix="nblm-audio-")
+        try:
+            aio.run(nblm.audio_overview(out, args.get("instructions", "")))
+            lark_user.send_file(chat_id, out)
+            lark_user.send_text(chat_id, "🎧 Audio Overview từ notebook đây ạ!")
+        except Exception as e:
+            try:
+                lark_user.send_text(chat_id, f"⚠️ Tạo audio overview lỗi: {str(e)[:200]}")
+            except Exception:
+                pass
+        finally:
+            import os as _os
+            if _os.path.exists(out):
+                _os.unlink(out)
+
+    import threading
+    threading.Thread(target=_run, daemon=True).start()
+    return _text("Đã bắt đầu tạo Audio Overview (5-15 phút) — xong sẽ gửi file vào chat này. "
+                 "Báo người dùng chờ nhé.")
+
+
 # ---------- Kho bộ nhớ ----------
 
 @tool("memory_save",
@@ -372,4 +442,5 @@ lark_server = create_sdk_mcp_server(
            meeting_list_pending, meeting_save_draft, meeting_finalize,
            org_lookup, person_note_save,
            search_resources, recent_resources,
+           notebooklm_ask, notebooklm_add_source, notebooklm_audio_overview,
            memory_save, memory_index, memory_read])
