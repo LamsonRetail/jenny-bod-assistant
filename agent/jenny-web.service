@@ -1,0 +1,20 @@
+[Unit]
+Description=Jenny - LSR BOD Assistant (webhook server)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/jenny/app
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TZ=Asia/Ho_Chi_Minh
+Environment=JENNY_SECRETS_DIR=/opt/jenny/config/secrets
+EnvironmentFile=/opt/jenny/config/secrets/agent.env
+ExecStart=/opt/jenny/venv/bin/uvicorn jenny.webhook:app --host 127.0.0.1 --port 8080
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/jenny/logs/jenny-web.log
+StandardError=append:/opt/jenny/logs/jenny-web.log
+
+[Install]
+WantedBy=multi-user.target

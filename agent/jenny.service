@@ -1,0 +1,20 @@
+[Unit]
+Description=Jenny - LSR BOD Assistant (Telegram gateway)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/jenny/app
+Environment=PATH=/root/.local/bin:/usr/local/bin:/usr/bin:/bin
+Environment=TZ=Asia/Ho_Chi_Minh
+Environment=JENNY_SECRETS_DIR=/opt/jenny/config/secrets
+Environment=JENNY_WORKDIR=/opt/jenny/workdir
+ExecStart=/opt/jenny/venv/bin/python -m jenny.main
+Restart=always
+RestartSec=5
+StandardOutput=append:/opt/jenny/logs/jenny.log
+StandardError=append:/opt/jenny/logs/jenny.log
+
+[Install]
+WantedBy=multi-user.target
