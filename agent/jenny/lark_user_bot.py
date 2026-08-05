@@ -121,8 +121,15 @@ def _maybe_meeting_recording(msg: dict, text: str, sender_id: str) -> bool:
     if not audio_job:
         return False
 
-    meeting = meetings.match_pending_for_creator(sender_id)
+    meeting = meetings.match_or_create_for_creator(sender_id)
     if not meeting:
+        if audio_job[0] == "minutes":  # người gửi không phải creator cuộc họp nào
+            lark_user.send_text(
+                msg.get("chat_id", ""),
+                "Em nhận được link bản ghi nhưng chưa khớp với cuộc họp nào của "
+                "anh/chị trên lịch của em (em cần được mời trong calendar event, và "
+                "người gửi bản ghi là người tạo họp). Anh/chị kiểm tra giúp em nhé.")
+            return True
         return False
 
     def _run() -> None:

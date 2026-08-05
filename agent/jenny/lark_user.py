@@ -387,6 +387,28 @@ def delete_event(event_id: str) -> None:
     _delete(f"/calendar/v4/calendars/{cal}/events/{event_id}")
 
 
+def reply_event(event_id: str, rsvp: str) -> None:
+    """Trả lời lời mời họp: rsvp = 'accept' | 'decline' | 'tentative'.
+
+    Họp định kỳ mà Jenny chỉ được add vào từng buổi (exception instance)
+    có thể không reply được qua API — thử instance id rồi series id (_0).
+    """
+    import re
+    cal = primary_calendar_id()
+    candidates = [event_id]
+    if re.search(r"_\d+$", event_id):
+        candidates.append(re.sub(r"_\d+$", "_0", event_id))
+    last = None
+    for eid in candidates:
+        try:
+            _post(f"/calendar/v4/calendars/{cal}/events/{eid}/reply",
+                  {"rsvp_status": rsvp})
+            return
+        except Exception as e:
+            last = e
+    raise last  # type: ignore[misc]
+
+
 def event_attendees(event_id: str) -> list[dict]:
     cal = primary_calendar_id()
     items, page_token = [], ""
