@@ -297,9 +297,22 @@ def download_minutes_media(url_or_token: str) -> tuple[bytes, str]:
     return r.content, r.headers.get("content-type", "audio/mp4").split(";")[0]
 
 
+MAX_IM_FILE = 28 * 1024 * 1024  # Lark chặn file tin nhắn ~30MB
+
+
 def send_file(chat_id: str, path: str) -> None:
-    """Upload file rồi gửi vào chat (dùng cho audio/podcast, tài liệu)."""
+    """Upload file rồi gửi vào chat. Audio quá 28MB tự nén bằng ffmpeg."""
+    import os as _os
+    import subprocess
     from pathlib import Path as _P
+
+    if _os.path.getsize(path) > MAX_IM_FILE and _P(path).suffix.lower() in (
+            ".m4a", ".mp3", ".wav", ".ogg", ".aac", ".flac"):
+        small = str(_P(path).with_suffix("")) + "-nen.m4a"
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", path,
+                        "-ac", "1", "-b:a", "40k", small], check=True, timeout=600)
+        path = small
+
     name = _P(path).name
     with open(path, "rb") as f:
         r = _http.post(f"{BASE}/im/v1/files",
