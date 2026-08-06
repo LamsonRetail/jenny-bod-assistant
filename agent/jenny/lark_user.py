@@ -276,6 +276,24 @@ def download_message_resource(message_id: str, file_key: str) -> tuple[bytes, st
     return r.content, ct
 
 
+def vc_recording(meeting_id: str) -> dict:
+    """URL bản ghi cuộc họp VC (tenant token) — dùng khi nhận event recording_ready."""
+    r = _http.get(f"{BASE}/vc/v1/meetings/{meeting_id}/recording",
+                  headers={"Authorization": f"Bearer {_tenant_token()}"}).json()
+    if r.get("code") != 0:
+        raise RuntimeError(f"VC recording {meeting_id}: {r.get('code')} {r.get('msg')}")
+    return r.get("data", {})
+
+
+def download_url(url: str) -> tuple[bytes, str]:
+    """Tải file từ URL bản ghi (kèm tenant token nếu là API của Lark)."""
+    headers = {}
+    if "larksuite.com" in url or "feishu" in url:
+        headers["Authorization"] = f"Bearer {_tenant_token()}"
+    r = _http.get(url, headers=headers, follow_redirects=True, timeout=900)
+    return r.content, r.headers.get("content-type", "audio/mp4").split(";")[0]
+
+
 def minutes_meta(url_or_token: str) -> dict:
     """Thông tin bản ghi Minutes (tenant token)."""
     import re

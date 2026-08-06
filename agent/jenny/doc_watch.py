@@ -146,6 +146,41 @@ def watch_doc_url(url: str, title: str = "") -> None:
                       "context_note": "Jenny được yêu cầu theo dõi comment"})
 
 
+def handle_task_comments(guid: str, comments: list[dict]) -> None:
+    """Xử lý comment của 1 task (gọi từ event listener) — bỏ qua comment đã thấy."""
+    from . import assignments
+    rows = [a for a in assignments.list_active() if a.get("lark_task_guid") == guid]
+    if not rows:
+        log.info("Task %s không thuộc việc BOD giao — bỏ qua", guid[:12])
+        return
+    a = rows[0]
+    cur = _cursor()
+    key = f"task:{guid}"
+    changed = False
+    for c in comments:
+        cid = str(c.get("id") or "")
+        creator = c.get("creator") or {}
+        if not cid or cid in cur.get(key, []):
+            continue
+        cur.setdefault(key, []).append(cid)
+        cur[key] = cur[key][-100:]
+        changed = True
+        if creator.get("type") == "app":
+            continue
+        text = (c.get("content") or "").strip()
+        if not text:
+            continue
+        from . import org
+        author = creator.get("id", "")
+        person = org.get_person(author) or {}
+        try:
+            _answer_task_comment(a, text, author, person, guid)
+        except Exception:
+            log.exception("Trả lời comment task lỗi")
+    if changed:
+        _save_cursor(cur)
+
+
 def _watch_task_comments() -> None:
     """Comment trong task của việc BOD giao (task do Jenny tạo → đọc được)."""
     from . import assignments, org

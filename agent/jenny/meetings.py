@@ -280,6 +280,64 @@ def match_or_create_for_creator(sender_open_id: str) -> dict | None:
     return None
 
 
+def match_or_create_by_topic(topic: str, vc_meeting: dict) -> dict | None:
+    """Khớp hồ sơ họp theo tiêu đề (từ event VC); chưa có thì tạo từ lịch/event."""
+    res = (db.sb().table("meetings").select("*")
+           .in_("status", ["awaiting_content", "draft"])
+           .order("end_at", desc=True).limit(20).execute()).data
+    for m in res:
+        if (m.get("title") or "").strip().lower() == topic.strip().lower():
+            return m
+
+    # chưa có: tra lịch Jenny tìm sự kiện cùng tên trong 24h gần đây
+    import time as _t
+    now = int(_t.time())
+    try:
+        events = lark_user.list_events(now - 24 * 3600, now + 3600)
+    except Exception:
+        events = []
+    for e in events:
+        if (e.get("summary") or "").strip().lower() != topic.strip().lower():
+            continue
+        event_id = e.get("event_id", "")
+        exist = db.sb().table("meetings").select("*").eq("event_id", event_id).execute()
+        if exist.data:
+            return exist.data[0]
+        try:
+            attendees, creator, _ = _parse_attendees(event_id)
+        except Exception:
+            attendees, creator = [], None
+        if not _is_authorized_meeting(creator or {}, attendees):
+            log.info("Bản ghi '%s': không thuộc người được cấp quyền → bỏ qua", topic)
+            return None
+        creator = creator or (attendees[0] if attendees else None)
+        if not creator:
+            return None
+        end_ts = int(e.get("end_time", {}).get("timestamp") or now)
+        row = db.sb().table("meetings").insert({
+            "event_id": event_id, "title": topic,
+            "end_at": dt.datetime.fromtimestamp(min(end_ts, now), VN).isoformat(),
+            "creator_open_id": creator["open_id"], "creator_name": creator["name"],
+            "attendees": attendees,
+        }).execute().data
+        return row[0] if row else None
+
+    # không có trên lịch: dùng host của cuộc họp VC làm owner nếu có quyền
+    host = (vc_meeting.get("host_user") or {}).get("id", {})
+    host_id = host.get("open_id") if isinstance(host, dict) else ""
+    if host_id and host_id in _authorized_ids():
+        from . import org
+        p = org.get_person(host_id) or {}
+        row = db.sb().table("meetings").insert({
+            "event_id": f"vc:{vc_meeting.get('id') or topic}", "title": topic,
+            "end_at": dt.datetime.now(VN).isoformat(),
+            "creator_open_id": host_id, "creator_name": p.get("name") or "",
+            "attendees": [{"open_id": host_id, "name": p.get("name") or ""}],
+        }).execute().data
+        return row[0] if row else None
+    return None
+
+
 def process_recording(meeting: dict, audio: bytes | None = None,
                       mime: str = "", minutes_url: str = "") -> None:
     """Gỡ băng (Gemini) → soạn notes (Claude) → gửi owner duyệt. Chạy trong thread riêng."""
@@ -293,7 +351,10 @@ def process_recording(meeting: dict, audio: bytes | None = None,
                               "(Việt-Anh) và soạn notes — khoảng vài phút ạ.")
         transcript = None
         if minutes_url and audio is None:
-            audio, mime = lark_user.download_minutes_media(minutes_url)
+            if "/minutes/" in minutes_url:
+                audio, mime = lark_user.download_minutes_media(minutes_url)
+            else:  # URL bản ghi từ event VC
+                audio, mime = lark_user.download_url(minutes_url)
         if transcript is None:
             transcript = transcribe.transcribe_audio(audio, mime or "audio/mp4",
                                                      title=title)

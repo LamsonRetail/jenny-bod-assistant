@@ -23,11 +23,17 @@ cp /opt/jenny/app/jenny.service /etc/systemd/system/jenny.service
 cp /opt/jenny/app/jenny-lark.service /etc/systemd/system/jenny-lark.service
 cp /opt/jenny/app/jenny-web.service /etc/systemd/system/jenny-web.service
 cp /opt/jenny/app/jenny-cron.service /etc/systemd/system/jenny-cron.service
+cp /opt/jenny/app/jenny-events.service /etc/systemd/system/jenny-events.service
 systemctl daemon-reload
 
 systemctl enable jenny-cron >/dev/null 2>&1 || true
 systemctl restart jenny-cron
 systemctl is-active jenny-cron && echo "✓ jenny-cron (scheduler) running"
+
+systemctl enable jenny-events >/dev/null 2>&1 || true
+systemctl restart jenny-events
+sleep 2
+systemctl is-active jenny-events && echo "✓ jenny-events (bot events) running"
 
 if grep -q '^WEBHOOK_SECRET=..*' /opt/jenny/config/secrets/agent.env 2>/dev/null; then
   systemctl enable jenny-web >/dev/null 2>&1 || true
