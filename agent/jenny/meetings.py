@@ -280,6 +280,60 @@ def match_or_create_for_creator(sender_open_id: str) -> dict | None:
     return None
 
 
+def match_by_calendar_or_topic(calendar_event_id: str, topic: str) -> dict | None:
+    """Khớp hồ sơ họp theo calendar_event_id (chính xác nhất) rồi tới tiêu đề.
+
+    calendar_event_id từ event VC có dạng '<id>_0' — sự kiện trên lịch Jenny dùng
+    '<id>_<timestamp>', nên so khớp theo phần id gốc.
+    """
+    base = (calendar_event_id or "").rsplit("_", 1)[0]
+    if base:
+        rows = (db.sb().table("meetings").select("*")
+                .like("event_id", f"{base}%").limit(1).execute()).data
+        if rows:
+            return rows[0]
+        # chưa có hồ sơ: tra lịch Jenny theo id gốc
+        import time as _t
+        now = int(_t.time())
+        try:
+            events = lark_user.list_events(now - 24 * 3600, now + 3600)
+        except Exception:
+            events = []
+        for e in events:
+            if not (e.get("event_id") or "").startswith(base):
+                continue
+            return _create_from_event(e, topic or e.get("summary") or "")
+    return match_or_create_by_topic(topic, {})
+
+
+def _create_from_event(e: dict, topic: str) -> dict | None:
+    """Tạo hồ sơ họp từ 1 sự kiện trên lịch Jenny (đã kiểm tra quyền)."""
+    import time as _t
+    event_id = e.get("event_id", "")
+    exist = db.sb().table("meetings").select("*").eq("event_id", event_id).execute()
+    if exist.data:
+        return exist.data[0]
+    try:
+        attendees, creator, _ = _parse_attendees(event_id)
+    except Exception:
+        attendees, creator = [], None
+    if not _is_authorized_meeting(creator or {}, attendees):
+        log.info("Họp '%s': người tạo/tham dự không có quyền dùng Jenny → bỏ qua", topic)
+        return None
+    creator = creator or (attendees[0] if attendees else None)
+    if not creator:
+        return None
+    now = int(_t.time())
+    end_ts = int(e.get("end_time", {}).get("timestamp") or now)
+    row = db.sb().table("meetings").insert({
+        "event_id": event_id, "title": topic or e.get("summary") or "(không tiêu đề)",
+        "end_at": dt.datetime.fromtimestamp(min(end_ts, now), VN).isoformat(),
+        "creator_open_id": creator["open_id"], "creator_name": creator["name"],
+        "attendees": attendees,
+    }).execute().data
+    return row[0] if row else None
+
+
 def match_or_create_by_topic(topic: str, vc_meeting: dict) -> dict | None:
     """Khớp hồ sơ họp theo tiêu đề (từ event VC); chưa có thì tạo từ lịch/event."""
     res = (db.sb().table("meetings").select("*")

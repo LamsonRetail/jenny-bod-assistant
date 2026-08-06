@@ -61,8 +61,71 @@ def _handle_recording(raw: str) -> None:
         log.exception("Xử lý recording_ready lỗi")
 
 
+PAYLOAD_LOG = "/opt/jenny/logs/events-payload.jsonl"
+
+
+def _dump(kind: str, raw: str) -> None:
+    try:
+        with open(PAYLOAD_LOG, "a", encoding="utf-8") as f:
+            f.write(json.dumps({"kind": kind, "raw": raw}, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def _on_meeting_ended(data: lark.CustomizedEvent) -> None:
-    log.info("EVENT meeting_ended: %s", lark.JSON.marshal(data)[:500])
+    raw = lark.JSON.marshal(data)
+    _dump("meeting_ended", raw)
+    try:
+        ev = json.loads(raw)
+        etype = ev.get("header", {}).get("event_type", "")
+        m = ev.get("event", {}).get("meeting", {}) or {}
+        log.info("EVENT %s: topic=%r meeting_id=%s calendar_event_id=%s",
+                 etype, m.get("topic"), m.get("id"), m.get("calendar_event_id"))
+        if "ended" not in etype:
+            return
+        threading.Thread(target=_handle_meeting_ended, args=(raw,), daemon=True).start()
+    except Exception:
+        log.exception("Parse meeting event lỗi")
+
+
+def _handle_meeting_ended(raw: str) -> None:
+    """Họp kết thúc → nếu Jenny được mời, chờ bản ghi sẵn sàng rồi chạy pipeline."""
+    import time
+
+    from . import lark_user, meetings
+    try:
+        ev = json.loads(raw)
+        m = ev.get("event", {}).get("meeting", {}) or {}
+        meeting_id = str(m.get("id") or "")
+        topic = m.get("topic") or "(không tiêu đề)"
+        cal_id = m.get("calendar_event_id") or ""
+        if not meeting_id:
+            return
+
+        row = meetings.match_by_calendar_or_topic(cal_id, topic)
+        if not row:
+            log.info("Họp '%s' kết thúc — Jenny không được mời/không có quyền → bỏ qua",
+                     topic)
+            return
+
+        url = ""
+        for attempt in range(20):  # bản ghi cần vài phút để Lark xử lý
+            time.sleep(45)
+            try:
+                data = lark_user.vc_recording(meeting_id)
+                url = (data.get("recording", {}) or {}).get("url", "")
+                if url:
+                    break
+            except Exception as e:
+                log.debug("Chờ bản ghi '%s' (lần %d): %s", topic, attempt + 1, str(e)[:80])
+        if not url:
+            log.info("Họp '%s': không có bản ghi (không bật Record) → bỏ qua", topic)
+            return
+
+        log.info("Có bản ghi họp '%s' → chạy pipeline notes", topic)
+        meetings.process_recording(row, minutes_url=url)
+    except Exception:
+        log.exception("Xử lý meeting_ended lỗi")
 
 
 def _on_task_updated(data: lark.CustomizedEvent) -> None:
@@ -93,14 +156,23 @@ def _handle_task_event(raw: str) -> None:
 
 def run_listener() -> None:
     config.require("LARK_APP_ID", "LARK_APP_SECRET")
-    handler = (lark.EventDispatcherHandler.builder("", "")
-               .register_p2_customized_event("vc.meeting.recording_ready_v1",
-                                             _on_recording_ready)
-               .register_p2_customized_event("vc.meeting.all_meeting_ended_v1",
-                                             _on_meeting_ended)
-               .register_p2_customized_event("task.task.updated_tenant_v1",
-                                             _on_task_updated)
-               .build())
+    # Tên event lấy từ log thực tế Lark gửi. Đăng ký CẢ p1 và p2 vì event tenant
+    # của Lark (task/vc) gửi theo schema v1 — SDK tra key theo "<schema>.<type>".
+    EVENTS = [
+        ("vc.meeting.recording_ready_v1", _on_recording_ready),
+        ("vc.meeting.recording_ended_v1", _on_recording_ready),
+        ("vc.meeting.all_meeting_ended_v1", _on_meeting_ended),
+        ("vc.meeting.all_meeting_started_v1", _on_meeting_ended),
+        ("vc.meeting.meeting_ended_v1", _on_meeting_ended),
+        ("task.task.update_tenant_v1", _on_task_updated),
+        ("task.task.updated_v1", _on_task_updated),
+        ("task.task.comment_updated_v1", _on_task_updated),
+    ]
+    builder = lark.EventDispatcherHandler.builder("", "")
+    for name, fn in EVENTS:
+        builder = builder.register_p1_customized_event(name, fn)
+        builder = builder.register_p2_customized_event(name, fn)
+    handler = builder.build()
     ws = lark.ws.Client(config.LARK_APP_ID, config.LARK_APP_SECRET,
                         event_handler=handler, domain=config.LARK_DOMAIN,
                         log_level=lark.LogLevel.INFO)
