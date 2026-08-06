@@ -210,6 +210,22 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str) -> None:
             sender_context += f" (open_id: {sender_id})"
     except Exception:
         log.exception("Tra hồ sơ người hỏi lỗi")
+    try:
+        bod = db.all_configs().get("bod_members", {}).get("members", [])
+        me_bod = next((b for b in bod if b.get("open_id") == sender_id), None)
+        if me_bod:
+            sender_context += (f". ⭐ THÀNH VIÊN BOD — phụ trách: {me_bod.get('domains')}. "
+                               "Người này được giao việc cho nhân sự (assignment_create).")
+        from . import assignments
+        my_jobs = assignments.list_active(sender_id)
+        if my_jobs:
+            brief = "; ".join(f"[{a['id'][:8]}…] {a['title']} ({a['status']})"
+                              for a in my_jobs[:5])
+            sender_context += (f". Việc BOD đang giao cho người này: {brief} — nếu tin nhắn "
+                               "là nộp kết quả, đối chiếu expected_outcome (assignment_list) "
+                               "và xử lý theo skill bod-delegation.")
+    except Exception:
+        log.exception("Tra assignments/BOD lỗi")
     sender_context = (sender_context + f" · chat_id hiện tại: {chat_id}").strip(" ·")
 
     history = db.recent_messages(conv["id"], config.MAX_HISTORY_MESSAGES)[:-1]

@@ -314,6 +314,86 @@ async def recent_resources(args: dict) -> dict:
         return _err(e)
 
 
+# ---------- Việc BOD giao (assignments) ----------
+
+@tool("assignment_create",
+      "Tạo việc BOD giao cho 1 nhân sự — CHỈ khi người giao là thành viên BOD. Bắt buộc "
+      "đủ 4 yếu tố (thiếu thì hỏi lại trước): title (việc gì), context (bối cảnh), "
+      "expected_outcome (đầu ra cụ thể để đánh giá), pic_open_id (tra org_lookup). "
+      "deadline 'YYYY-MM-DD HH:MM' giờ VN (bỏ trống nếu không có). assigner_open_id = "
+      "open_id người giao (có trong thông tin người nhắn). Tự động: tạo Lark task + "
+      "nhắn PIC đầy đủ thông tin.",
+      {"title": str, "context": str, "expected_outcome": str, "deadline": str,
+       "pic_open_id": str, "assigner_open_id": str})
+async def assignment_create(args: dict) -> dict:
+    try:
+        from . import assignments
+        row = assignments.create(args["title"], args.get("context", ""),
+                                 args.get("expected_outcome", ""),
+                                 args.get("deadline", ""),
+                                 args["pic_open_id"], args.get("assigner_open_id", ""))
+        return _text(f"Đã tạo việc [{row['id']}] và nhắn PIC {row.get('pic_name')}.")
+    except Exception as e:
+        return _err(e)
+
+
+@tool("assignment_list",
+      "Danh sách việc BOD giao đang mở (assigned/in_review/needs_more) kèm deadline, "
+      "PIC, đầu ra mong đợi. pic_open_id: lọc theo 1 người (bỏ trống = tất cả). "
+      "Dùng khi: PIC nộp kết quả (tìm việc tương ứng), đôn đốc, tổng kết cuối ngày.",
+      {"pic_open_id": str})
+async def assignment_list(args: dict) -> dict:
+    try:
+        from . import assignments
+        rows = assignments.list_active((args.get("pic_open_id") or "").strip() or None)
+        return _text(assignments.fmt(rows))
+    except Exception as e:
+        return _err(e)
+
+
+@tool("assignment_update",
+      "Cập nhật việc BOD giao. status: in_review (PIC vừa nộp, đang đánh giá) | "
+      "needs_more (thiếu, đã yêu cầu bổ sung) | done (đủ — BẮT BUỘC kèm result_summary "
+      "là bản tổng hợp cho BOD ra quyết định; hệ thống tự complete Lark task).",
+      {"assignment_id": str, "status": str, "result_summary": str})
+async def assignment_update(args: dict) -> dict:
+    try:
+        from . import assignments
+        row = assignments.update(args["assignment_id"],
+                                 (args.get("status") or "").strip() or None,
+                                 args.get("result_summary"))
+        return _text(f"Đã cập nhật [{row['id']}] → {row['status']}.")
+    except Exception as e:
+        return _err(e)
+
+
+@tool("assignment_remind",
+      "Nhắn nhắc PIC của 1 việc đang mở (đôn đốc deadline, hỏi tiến độ). "
+      "message: nội dung nhắc — lịch sự, nêu rõ việc + deadline.",
+      {"assignment_id": str, "message": str})
+async def assignment_remind(args: dict) -> dict:
+    try:
+        from . import assignments
+        assignments.remind(args["assignment_id"], args["message"])
+        return _text("Đã nhắc PIC.")
+    except Exception as e:
+        return _err(e)
+
+
+@tool("assignment_notify_assigner",
+      "Gửi báo cáo/tổng hợp về 1 việc cho thành viên BOD đã giao việc đó (chat riêng). "
+      "Dùng khi kết quả đã đủ (kèm summary + đề xuất quyết định) hoặc cần escalate "
+      "(quá hạn nhiều lần, PIC không phản hồi).",
+      {"assignment_id": str, "text": str})
+async def assignment_notify_assigner(args: dict) -> dict:
+    try:
+        from . import assignments
+        assignments.notify_assigner(args["assignment_id"], args["text"])
+        return _text("Đã gửi cho người giao việc.")
+    except Exception as e:
+        return _err(e)
+
+
 # ---------- NotebookLM (Gemini Notebook) ----------
 
 @tool("notebooklm_ask",
@@ -443,4 +523,6 @@ lark_server = create_sdk_mcp_server(
            org_lookup, person_note_save,
            search_resources, recent_resources,
            notebooklm_ask, notebooklm_add_source, notebooklm_audio_overview,
+           assignment_create, assignment_list, assignment_update,
+           assignment_remind, assignment_notify_assigner,
            memory_save, memory_index, memory_read])
