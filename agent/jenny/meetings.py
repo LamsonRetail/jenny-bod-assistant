@@ -291,9 +291,18 @@ def process_recording(meeting: dict, audio: bytes | None = None,
     try:
         message_user(creator, f"⏳ Em nhận được bản ghi của “{title}”. Đang gỡ băng "
                               "(Việt-Anh) và soạn notes — khoảng vài phút ạ.")
+        transcript = None
         if minutes_url and audio is None:
-            audio, mime = lark_user.download_minutes_media(minutes_url)
-        transcript = transcribe.transcribe_audio(audio, mime or "audio/mp4", title=title)
+            try:
+                audio, mime = lark_user.download_minutes_media(minutes_url)
+            except Exception as e:
+                # Lark chặn API tải bản ghi → Jenny tự mở trang Minutes lấy transcript
+                log.warning("API media bị chặn (%s) — chuyển sang đọc web Minutes", e)
+                from . import minutes_web
+                transcript = asyncio.run(minutes_web.fetch_transcript(minutes_url))
+        if transcript is None:
+            transcript = transcribe.transcribe_audio(audio, mime or "audio/mp4",
+                                                     title=title)
 
         from . import agent
         attendees = ", ".join(a.get("name", "?") for a in (meeting.get("attendees") or []))

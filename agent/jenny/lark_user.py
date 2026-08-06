@@ -32,9 +32,11 @@ SCOPES = ("offline_access "
           "task:task task:task:readonly "
           "contact:contact:readonly contact:contact.base:readonly "
           "contact:department.base:readonly contact:user.employee:readonly "
-          "im:resource")
-# Lưu ý: minutes:minute:readonly bị Lark từ chối ở OAuth user (lỗi 20043) —
-# audio từ Minutes lấy qua đường owner tải về gửi file, hoặc thử tenant token.
+          "im:resource "
+          "minutes:minutes:readonly minutes:minute:download "
+          "minutes:minutes.media:export")
+# Tên scope minutes lấy từ thông báo lỗi 99991679 của chính Lark API
+# (bản số ít "minutes:minute:readonly" không tồn tại → OAuth 20043).
 
 _http = httpx.Client(timeout=30)
 
