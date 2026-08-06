@@ -115,8 +115,9 @@ def run_scheduler() -> None:
         try:
             now = dt.datetime.now(VN)
             _maybe_sync_org()
-            from . import meetings
+            from . import doc_watch, meetings
             meetings.maybe_watch()
+            doc_watch.maybe_watch()
             rows = (db.sb().table("scheduled_tasks").select("*")
                     .eq("enabled", True).execute()).data
             for row in rows:

@@ -305,6 +305,20 @@ async def search_resources(args: dict) -> dict:
         return _err(e)
 
 
+@tool("watch_document",
+      "Thêm 1 tài liệu Lark (docs/base/wiki) vào danh sách Jenny theo dõi comment — "
+      "sau đó ai tag Jenny trong comment của tài liệu đó sẽ được trả lời tự động. "
+      "Dùng khi người dùng gửi link và nhờ 'theo dõi/để ý tài liệu này'.",
+      {"url": str, "title": str})
+async def watch_document(args: dict) -> dict:
+    try:
+        from . import doc_watch
+        doc_watch.watch_doc_url(args["url"], args.get("title", ""))
+        return _text("Đã thêm vào danh sách theo dõi comment (quét mỗi 2 phút).")
+    except Exception as e:
+        return _err(e)
+
+
 @tool("recent_resources",
       "Liệt kê các link/file/doc được share gần đây nhất trong các chat Lark.", {})
 async def recent_resources(args: dict) -> dict:
@@ -521,7 +535,7 @@ lark_server = create_sdk_mcp_server(
            send_lark_message,
            meeting_list_pending, meeting_save_draft, meeting_finalize,
            org_lookup, person_note_save,
-           search_resources, recent_resources,
+           search_resources, recent_resources, watch_document,
            notebooklm_ask, notebooklm_add_source, notebooklm_audio_overview,
            assignment_create, assignment_list, assignment_update,
            assignment_remind, assignment_notify_assigner,

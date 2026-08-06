@@ -513,6 +513,20 @@ def list_tasks() -> list[dict]:
             return items
 
 
+def list_task_comments(task_guid: str) -> list[dict]:
+    """Comment trong 1 task (task do Jenny/app tạo mới đọc được — Lark chặn user token)."""
+    return _task_request("GET", "/task/v2/comments", None,
+                         {"resource_type": "task", "resource_id": task_guid,
+                          "page_size": 50, "user_id_type": "open_id"}).get("items", [])
+
+
+def add_task_comment(task_guid: str, text: str) -> None:
+    _task_request("POST", "/task/v2/comments",
+                  {"content": text[:8000], "resource_type": "task",
+                   "resource_id": task_guid},
+                  {"user_id_type": "open_id"})
+
+
 def complete_task(task_guid: str) -> None:
     import time as _t
     _task_request("PATCH", f"/task/v2/tasks/{task_guid}",
