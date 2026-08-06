@@ -322,19 +322,9 @@ def match_or_create_by_topic(topic: str, vc_meeting: dict) -> dict | None:
         }).execute().data
         return row[0] if row else None
 
-    # không có trên lịch: dùng host của cuộc họp VC làm owner nếu có quyền
-    host = (vc_meeting.get("host_user") or {}).get("id", {})
-    host_id = host.get("open_id") if isinstance(host, dict) else ""
-    if host_id and host_id in _authorized_ids():
-        from . import org
-        p = org.get_person(host_id) or {}
-        row = db.sb().table("meetings").insert({
-            "event_id": f"vc:{vc_meeting.get('id') or topic}", "title": topic,
-            "end_at": dt.datetime.now(VN).isoformat(),
-            "creator_open_id": host_id, "creator_name": p.get("name") or "",
-            "attendees": [{"open_id": host_id, "name": p.get("name") or ""}],
-        }).execute().data
-        return row[0] if row else None
+    # Không thấy trên lịch của Jenny → cuộc họp KHÔNG mời Jenny → không xử lý.
+    # (Nguyên tắc: chỉ transcript cuộc họp có add Jenny tham gia.)
+    log.info("Bản ghi '%s': không có trên lịch Jenny (không được mời) → bỏ qua", topic)
     return None
 
 

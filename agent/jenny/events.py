@@ -52,7 +52,9 @@ def _handle_recording(raw: str) -> None:
 
         row = meetings.match_or_create_by_topic(topic, meeting)
         if not row:
-            log.info("Bỏ qua bản ghi '%s' — không khớp cuộc họp nào Jenny theo dõi", topic)
+            # chỉ xử lý cuộc họp có mời Jenny (có trên lịch Jenny) và người
+            # tạo/tham dự nằm trong danh sách được cấp quyền
+            log.info("Bỏ qua bản ghi '%s' — Jenny không được mời hoặc không có quyền", topic)
             return
         meetings.process_recording(row, minutes_url=url)
     except Exception:
