@@ -276,22 +276,34 @@ def download_message_resource(message_id: str, file_key: str) -> tuple[bytes, st
     return r.content, ct
 
 
-def download_minutes_media(url_or_token: str) -> tuple[bytes, str]:
-    """Tải audio/video từ Lark Minutes — thử user token rồi tenant token."""
+def minutes_meta(url_or_token: str) -> dict:
+    """Thông tin bản ghi Minutes (tenant token)."""
     import re
     m = re.search(r"/minutes/([A-Za-z0-9]+)", url_or_token)
     token = m.group(1) if m else url_or_token
-    data, last_err = None, None
-    for auth in (access_token(), _tenant_token()):
-        r = _http.get(f"{BASE}/minutes/v1/minutes/{token}/media",
-                      headers={"Authorization": f"Bearer {auth}"}).json()
-        if r.get("code") == 0:
-            data = r.get("data", {})
-            break
-        last_err = f"{r.get('code')} {r.get('msg')}"
-    if data is None:
-        raise RuntimeError(f"Không truy cập được Minutes ({last_err}) — "
-                           "anh/chị tải bản ghi từ Minutes về rồi gửi file cho em nhé")
+    return _minutes_get(token, "").get("minute", {})
+
+
+def _minutes_get(token: str, tail: str) -> dict:
+    """Minutes API — CHỈ dùng tenant token."""
+    r = _http.get(f"{BASE}/minutes/v1/minutes/{token}{tail}",
+                  headers={"Authorization": f"Bearer {_tenant_token()}"}).json()
+    if r.get("code") == 0:
+        return r.get("data", {})
+    if r.get("code") == 2091005:
+        raise RuntimeError(
+            "Bot Jenny chưa có quyền xem bản ghi này — anh/chị bấm Share trên "
+            "Minutes và thêm Jenny (hoặc bật 'người trong tổ chức có link đều xem được'), "
+            "rồi gửi lại link cho em ạ.")
+    raise RuntimeError(f"Lark minutes: {r.get('code')} {r.get('msg')}")
+
+
+def download_minutes_media(url_or_token: str) -> tuple[bytes, str]:
+    """Tải audio/video từ Lark Minutes (tenant token)."""
+    import re
+    m = re.search(r"/minutes/([A-Za-z0-9]+)", url_or_token)
+    token = m.group(1) if m else url_or_token
+    data = _minutes_get(token, "/media")
     dl = data.get("download_url", "")
     if not dl:
         raise RuntimeError(f"Minutes không có download_url: {data}")
@@ -477,16 +489,16 @@ def _tenant_token() -> str:
 
 def _task_request(method: str, path: str, body: dict | None = None,
                   params: dict | None = None) -> dict:
-    """Task API: thử user token trước, thiếu quyền thì dùng tenant token."""
-    for token in (access_token(), _tenant_token()):
-        r = _http.request(method, f"{BASE}{path}", json=body, params=params,
-                          headers={"Authorization": f"Bearer {token}"}).json()
-        if r.get("code") == 0:
-            return r.get("data", {})
-        if r.get("code") != 99991679:  # lỗi khác "thiếu quyền" → báo luôn
-            raise RuntimeError(f"Lark {method} {path}: {r.get('code')} {r.get('msg')}")
-    raise RuntimeError(f"Lark {method} {path}: thiếu quyền task ở cả user lẫn tenant token "
-                       "(kiểm tra permission task trong Developer Console)")
+    """Task API — CHỈ dùng tenant token (Lark chặn scope task cho user token)."""
+    r = _http.request(method, f"{BASE}{path}", json=body, params=params,
+                      headers={"Authorization": f"Bearer {_tenant_token()}"}).json()
+    if r.get("code") == 0:
+        return r.get("data", {})
+    if r.get("code") == 1470403:
+        raise RuntimeError(
+            "Bot Jenny chưa có quyền trên task này — người tạo task cần thêm "
+            "Jenny làm follower/assignee, hoặc giao việc qua Jenny để Jenny tạo task.")
+    raise RuntimeError(f"Lark {method} {path}: {r.get('code')} {r.get('msg')}")
 
 def create_task(summary: str, due_ts_ms: int | None = None,
                 description: str = "", assignee_open_id: str = "") -> dict:

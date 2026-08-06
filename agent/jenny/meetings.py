@@ -293,13 +293,7 @@ def process_recording(meeting: dict, audio: bytes | None = None,
                               "(Việt-Anh) và soạn notes — khoảng vài phút ạ.")
         transcript = None
         if minutes_url and audio is None:
-            try:
-                audio, mime = lark_user.download_minutes_media(minutes_url)
-            except Exception as e:
-                # Lark chặn API tải bản ghi → Jenny tự mở trang Minutes lấy transcript
-                log.warning("API media bị chặn (%s) — chuyển sang đọc web Minutes", e)
-                from . import minutes_web
-                transcript = asyncio.run(minutes_web.fetch_transcript(minutes_url))
+            audio, mime = lark_user.download_minutes_media(minutes_url)
         if transcript is None:
             transcript = transcribe.transcribe_audio(audio, mime or "audio/mp4",
                                                      title=title)
