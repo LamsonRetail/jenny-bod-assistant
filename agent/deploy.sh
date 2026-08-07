@@ -10,6 +10,8 @@ SSH="ssh -i $KEY -o BatchMode=yes"
 echo "→ Rsync code + secrets"
 rsync -az -e "$SSH" --delete \
   --exclude '__pycache__' --exclude '*.pyc' \
+  --exclude '.lsr' --exclude '.claude' --exclude '.env.lsr' \
+  --exclude 'lsr-agent.yaml' \
   "$REPO_DIR/agent/" "$VPS:/opt/jenny/app/"
 rsync -az -e "$SSH" "$REPO_DIR/config/secrets/" "$VPS:/opt/jenny/config/secrets/"
 

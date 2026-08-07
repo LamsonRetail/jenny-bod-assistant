@@ -10,11 +10,17 @@ from dotenv import load_dotenv
 
 SECRETS_DIR = Path(os.environ.get("JENNY_SECRETS_DIR", "/opt/jenny/config/secrets"))
 WORKDIR = Path(os.environ.get("JENNY_WORKDIR", "/opt/jenny/workdir"))
+APP_DIR = Path(os.environ.get("JENNY_APP_DIR", "/opt/jenny/app"))
 
-for _name in ("supabase.env", "agent.env"):
+for _name in ("supabase.env", "agent.env", ".env.lsr"):
     _p = SECRETS_DIR / _name
     if _p.exists():
         load_dotenv(_p)
+
+# .env.lsr do lsr_adopt.py sinh ra ngay trong thư mục app (telemetry platform LSR)
+_lsr = APP_DIR / ".env.lsr"
+if _lsr.exists():
+    load_dotenv(_lsr)
 
 SUPABASE_URL = os.environ.get("SUPABASE_URL", "")
 SUPABASE_SERVICE_KEY = os.environ.get("SUPABASE_SERVICE_KEY", "")

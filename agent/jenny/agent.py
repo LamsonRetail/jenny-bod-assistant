@@ -141,7 +141,11 @@ async def run(prompt: str, system_prompt: str, conversation_id: str | None = Non
         # allowed_tools đã tự phê duyệt các tool trong danh sách.
         permission_mode="default",
         max_turns=15,
-        cwd=str(config.WORKDIR),
+        # cwd trỏ vào thư mục app để Claude Code nạp .claude/settings.json
+        # (hooks telemetry của LSR platform); setting_sources bắt buộc để SDK
+        # đọc settings từ file thay vì bỏ qua.
+        cwd=str(config.APP_DIR),
+        setting_sources=["project"],
         mcp_servers={"bq": _bq_server(), "lark": _lark_server()},
     )
     last_text: list[str] = []
