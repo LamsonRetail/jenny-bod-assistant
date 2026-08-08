@@ -341,9 +341,11 @@ def _cron_from_vn(minute: str, hour: str, dom: str, mon: str, dow: str) -> str:
       "lần chạy (mô tả rõ, độc lập, không hỏi lại). chat_id + channel(lark/telegram) = nơi "
       "gửi kết quả (lấy từ bối cảnh hội thoại hiện tại). thread_reply_to: nếu yêu cầu đến "
       "từ MỘT THREAD và muốn cập nhật vào đúng thread đó, truyền message_id (có trong bối "
-      "cảnh 'thread_reply_to: ...'). name: tên ngắn gợi nhớ.",
+      "cảnh 'thread_reply_to: ...'). until: hạn dừng (YYYY-MM-DD HH:MM giờ VN) — sau mốc này "
+      "lịch tự tắt (dùng khi 'cập nhật đến 9pm hôm nay'); bỏ trống = chạy vô hạn. "
+      "name: tên ngắn gợi nhớ.",
       {"name": str, "cron": str, "prompt": str, "chat_id": str, "channel": str,
-       "thread_reply_to": str})
+       "thread_reply_to": str, "until": str})
 async def schedule_create(args: dict) -> dict:
     try:
         cron = (args.get("cron") or "").strip()
@@ -354,11 +356,15 @@ async def schedule_create(args: dict) -> dict:
         trt = (args.get("thread_reply_to") or "").strip()
         if trt:
             chat_id = f"{chat_id}#{trt}"  # scheduler reply vào đúng thread
-        row = db.sb().table("scheduled_tasks").insert({
+        row_data = {
             "name": args["name"], "cron": cron, "prompt": args["prompt"],
             "channel": (args.get("channel") or "lark"),
             "chat_id": chat_id, "enabled": True,
-        }).execute().data[0]
+        }
+        until = (args.get("until") or "").strip()
+        if until:
+            row_data["expires_at"] = _parse_vn(until).isoformat()
+        row = db.sb().table("scheduled_tasks").insert(row_data).execute().data[0]
         return _text(f"Đã đặt lịch [{row['id']}] '{args['name']}' — cron `{cron}` (giờ VN)"
                      + (" (cập nhật vào đúng thread này)." if trt else " (gửi vào chat này).")
                      + " BÂY GIỜ hãy CHẠY NGAY nhiệm vụ này một lần (thực hiện đúng phần "

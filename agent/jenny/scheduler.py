@@ -127,6 +127,19 @@ def run_scheduler() -> None:
             rows = (db.sb().table("scheduled_tasks").select("*")
                     .eq("enabled", True).execute()).data
             for row in rows:
+                # Lịch có hạn dừng: quá hạn thì tự tắt, không chạy nữa
+                exp = row.get("expires_at")
+                if exp:
+                    try:
+                        exp_dt = dt.datetime.fromisoformat(
+                            exp.replace("Z", "+00:00")).astimezone(VN)
+                        if now > exp_dt:
+                            db.sb().table("scheduled_tasks").update(
+                                {"enabled": False}).eq("id", row["id"]).execute()
+                            log.info("Lịch '%s' đã hết hạn (%s) → tắt", row["name"], exp)
+                            continue
+                    except Exception:
+                        log.warning("expires_at không hợp lệ ở '%s': %s", row["name"], exp)
                 if row.get("chat_id") and _is_due(row, now):
                     asyncio.run(_run_task(row))
         except Exception:
