@@ -327,8 +327,20 @@ def run_bot() -> None:
     cursors: dict[str, int] = {}
     threads: dict[str, dict] = {}   # thread_id → chat dict
     tcursors: dict[str, int] = {}
+    handled: set[str] = set()       # message_id đã xử lý — chống lặp tuyệt đối
+    handled_order: list[str] = []
     last_chat_refresh = 0.0
     my_id = my.get("open_id", "")
+
+    def _seen(mid: str) -> bool:
+        """True nếu message_id đã xử lý (và đánh dấu nếu chưa)."""
+        if not mid or mid in handled:
+            return True
+        handled.add(mid)
+        handled_order.append(mid)
+        if len(handled_order) > 3000:  # giới hạn bộ nhớ
+            handled.discard(handled_order.pop(0))
+        return False
 
     while True:
         try:
@@ -374,11 +386,13 @@ def run_bot() -> None:
                         tcursors[tid] = create_sec  # đọc reply MỚI kể từ khi phát hiện
                     if m.get("sender", {}).get("id", "") == my_id:
                         continue
+                    if _seen(m.get("message_id", "")):
+                        continue
                     try:
                         asyncio.run(_handle_message(chat, m, my_id))
                     except Exception:
                         log.exception("handle_message lỗi")
-                cursors[cid] = latest
+                cursors[cid] = max(latest, now_sec)  # luôn tiến cursor, tránh đọc lại
 
             # Poll reply trong các thread đã biết (tin tag trong thread chỉ hiện ở đây)
             for tid, chat in list(threads.items()):
@@ -394,11 +408,13 @@ def run_bot() -> None:
                     latest = max(latest, create_sec + 1)
                     if m.get("sender", {}).get("id", "") == my_id:
                         continue
+                    if _seen(m.get("message_id", "")):
+                        continue
                     try:
                         asyncio.run(_handle_message(chat, m, my_id, in_thread=True))
                     except Exception:
                         log.exception("handle_message (thread) lỗi")
-                tcursors[tid] = latest
+                tcursors[tid] = max(latest, now_sec)  # luôn tiến cursor, tránh đọc lại
         except Exception:
             log.exception("Vòng poll lỗi — tiếp tục")
         time.sleep(POLL_INTERVAL)
