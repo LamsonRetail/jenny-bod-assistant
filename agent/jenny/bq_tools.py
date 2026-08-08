@@ -123,5 +123,18 @@ async def bq_query(args: dict) -> dict:
         return _text(f"BigQuery lỗi: {e}")
 
 
+@tool("bq_recent_queries",
+      "Lấy lại các câu SQL BigQuery ĐÃ CHẠY thành công gần đây (để tái sử dụng đúng query "
+      "cũ thay vì viết lại). keyword: lọc theo nội dung SQL (vd 'doanh thu', 'inventory', "
+      "tên bảng). Trả về danh sách SQL kèm thời điểm — chọn câu phù hợp rồi chạy lại bằng "
+      "bq_query. Dùng khi người dùng nói 'dùng lại query trước', 'cập nhật lại số đó'.",
+      {"keyword": str})
+async def bq_recent_queries(args: dict) -> dict:
+    rows = db.recent_bq_queries(args.get("keyword", ""))
+    if not rows:
+        return _text("Chưa có query BigQuery nào khớp trong lịch sử.")
+    return _text(json.dumps(rows, ensure_ascii=False, indent=1)[:20000])
+
+
 bq_server = create_sdk_mcp_server(name="bq", version="1.0.0",
-                                  tools=[get_data_dictionary, bq_query])
+                                  tools=[get_data_dictionary, bq_query, bq_recent_queries])

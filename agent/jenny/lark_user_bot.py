@@ -235,6 +235,10 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     except Exception:
         log.exception("Tra assignments/BOD lỗi")
     sender_context = (sender_context + f" · chat_id hiện tại: {chat_id}").strip(" ·")
+    if reply_to:
+        sender_context += (f" · Tin này ở trong 1 THREAD; thread_reply_to: {reply_to} "
+                           "(truyền vào schedule_create nếu người dùng muốn cập nhật định "
+                           "kỳ vào đúng thread này).")
 
     history = db.recent_messages(conv["id"], config.MAX_HISTORY_MESSAGES)[:-1]
     system_prompt = agent.build_system_prompt(chat.get("name"), is_group, channel="Lark")

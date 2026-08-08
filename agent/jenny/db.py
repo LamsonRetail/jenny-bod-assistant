@@ -83,6 +83,26 @@ def log_tool_call(session_id: str | None, conversation_id: str | None,
         log.exception("log_tool_call failed")
 
 
+def recent_bq_queries(keyword: str = "", limit: int = 10) -> list[dict]:
+    """Các câu SQL BigQuery đã chạy thành công gần đây (từ log tool_calls)."""
+    res = (sb().table("tool_calls")
+           .select("args,created_at")
+           .eq("tool_name", "mcp__bq__bq_query").eq("status", "ok")
+           .order("created_at", desc=True).limit(60).execute())
+    out = []
+    kw = (keyword or "").lower()
+    for r in res.data:
+        sql = ((r.get("args") or {}).get("sql") or "").strip()
+        if not sql:
+            continue
+        if kw and kw not in sql.lower():
+            continue
+        out.append({"sql": sql, "at": r.get("created_at", "")[:16]})
+        if len(out) >= limit:
+            break
+    return out
+
+
 def log_token_usage(session_id: str | None, model: str | None, usage: dict[str, Any]) -> None:
     try:
         today = dt.datetime.now(dt.timezone(dt.timedelta(hours=7))).date().isoformat()

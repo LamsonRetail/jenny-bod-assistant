@@ -339,21 +339,32 @@ def _cron_from_vn(minute: str, hour: str, dom: str, mon: str, dow: str) -> str:
       "mỗi X'. cron: cú pháp cron giờ VN (mỗi giờ='0 * * * *'; mỗi 30 phút='*/30 * * * *'; "
       "8h sáng hằng ngày='0 8 * * *'; mỗi thứ 2='0 9 * * 1'). prompt: việc Jenny sẽ làm mỗi "
       "lần chạy (mô tả rõ, độc lập, không hỏi lại). chat_id + channel(lark/telegram) = nơi "
-      "gửi kết quả (lấy từ bối cảnh hội thoại hiện tại). name: tên ngắn gợi nhớ.",
-      {"name": str, "cron": str, "prompt": str, "chat_id": str, "channel": str})
+      "gửi kết quả (lấy từ bối cảnh hội thoại hiện tại). thread_reply_to: nếu yêu cầu đến "
+      "từ MỘT THREAD và muốn cập nhật vào đúng thread đó, truyền message_id (có trong bối "
+      "cảnh 'thread_reply_to: ...'). name: tên ngắn gợi nhớ.",
+      {"name": str, "cron": str, "prompt": str, "chat_id": str, "channel": str,
+       "thread_reply_to": str})
 async def schedule_create(args: dict) -> dict:
     try:
         cron = (args.get("cron") or "").strip()
         if len(cron.split()) != 5:
             return _text("cron phải có 5 trường 'phút giờ ngày tháng thứ' (giờ VN). "
                          "Mỗi giờ = '0 * * * *'.")
+        chat_id = args["chat_id"]
+        trt = (args.get("thread_reply_to") or "").strip()
+        if trt:
+            chat_id = f"{chat_id}#{trt}"  # scheduler reply vào đúng thread
         row = db.sb().table("scheduled_tasks").insert({
             "name": args["name"], "cron": cron, "prompt": args["prompt"],
             "channel": (args.get("channel") or "lark"),
-            "chat_id": args["chat_id"], "enabled": True,
+            "chat_id": chat_id, "enabled": True,
         }).execute().data[0]
-        return _text(f"Đã đặt lịch [{row['id']}] '{args['name']}' — cron `{cron}` (giờ VN). "
-                     "Em sẽ tự chạy và gửi vào chat này theo lịch.")
+        return _text(f"Đã đặt lịch [{row['id']}] '{args['name']}' — cron `{cron}` (giờ VN)"
+                     + (" (cập nhật vào đúng thread này)." if trt else " (gửi vào chat này).")
+                     + " BÂY GIỜ hãy CHẠY NGAY nhiệm vụ này một lần (thực hiện đúng phần "
+                       "việc trong prompt lịch: lấy lại query bằng bq_recent_queries → chạy "
+                       "bq_query → trình bày) và gửi kết quả hiện tại luôn, KHÔNG chờ chu kỳ "
+                       "đầu tiên.")
     except Exception as e:
         return _err(e)
 

@@ -23,6 +23,12 @@ CHECK_INTERVAL = 30  # giây
 def _send_result(channel: str, chat_id: str, text: str) -> None:
     if channel == "lark":
         from . import lark_user
+        # chat_id dạng "oc_xxx#om_yyy" → trả kết quả vào đúng thread chứa om_yyy
+        if "#" in chat_id:
+            _, reply_msg_id = chat_id.split("#", 1)
+            for i in range(0, len(text), 9000):
+                lark_user.reply_in_thread(reply_msg_id, text[i:i + 9000])
+            return
         lark_user.send_text(chat_id, text)
     elif channel == "telegram":
         for i in range(0, len(text), 4096):
