@@ -146,9 +146,18 @@ def _maybe_meeting_recording(msg: dict, text: str, sender_id: str) -> bool:
     return True
 
 
-async def _handle_message(chat: dict, msg: dict, my_open_id: str) -> None:
+async def _handle_message(chat: dict, msg: dict, my_open_id: str,
+                          in_thread: bool = False) -> None:
     text = _parse_text(msg)
     sender0 = (msg.get("sender", {}).get("id") or "")
+    # Trong thread: trả lời vào đúng thread (reply theo message_id); ngoài thread: gửi chat.
+    reply_to = msg.get("message_id", "") if in_thread else ""
+
+    def _say(t: str) -> str:
+        if reply_to:
+            return lark_user.reply_in_thread(reply_to, t)
+        ids = lark_user.send_text(chat["chat_id"], t)
+        return ids[0] if ids else ""
     try:
         _index_resources(chat, msg, text, sender0)
     except Exception:
@@ -169,28 +178,27 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str) -> None:
 
     low = text.lower().strip()
     if low.startswith("/id"):
-        lark_user.send_text(chat_id, f"Chat ID: {chat_id}\nUser open_id: {sender_id}")
+        _say(f"Chat ID: {chat_id}\nUser open_id: {sender_id}")
         return
     if "/approve" in low:
         if sender_id in _admin_ids():
             db.set_whitelisted(conv["id"], True)
-            lark_user.send_text(chat_id, "✅ Chat này đã được duyệt. Em sẵn sàng phục vụ!")
+            _say("✅ Chat này đã được duyệt. Em sẵn sàng phục vụ!")
         else:
-            lark_user.send_text(chat_id, "Anh/chị không có quyền duyệt chat này.")
+            _say("Anh/chị không có quyền duyệt chat này.")
         return
 
     if is_group and not _mentioned_me(msg, my_open_id, text):
         return
     if not conv["whitelisted"]:
-        lark_user.send_text(chat_id,
-                            "Chat này chưa được duyệt sử dụng Jenny.\n"
-                            f"Chat ID: {chat_id} — admin gõ /approve tại đây để duyệt.")
+        _say("Chat này chưa được duyệt sử dụng Jenny.\n"
+             f"Chat ID: {chat_id} — admin gõ /approve tại đây để duyệt.")
         return
 
     # "Typing indicator": gửi placeholder ngay, xong thì edit thành câu trả lời
     placeholder_id = ""
     try:
-        placeholder_id = lark_user.send_text(chat_id, "⏳ Em đang xử lý, chờ em chút nhé…")[0]
+        placeholder_id = _say("⏳ Em đang xử lý, chờ em chút nhé…")
     except Exception:
         log.warning("Không gửi được placeholder")
 
@@ -237,9 +245,12 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str) -> None:
         log.exception("agent.run failed")
         err = "Em gặp lỗi khi xử lý, anh/chị thử lại giúp em nhé."
         try:
-            lark_user.update_text(placeholder_id, err)
+            if placeholder_id:
+                lark_user.update_text(placeholder_id, err)
+            else:
+                _say(err)
         except Exception:
-            lark_user.send_text(chat_id, err)
+            _say(err)
         return
 
     usage = reply.usage or {}
@@ -248,11 +259,14 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str) -> None:
                    tokens_output=usage.get("output_tokens"))
     first, rest = reply.text[:9000], reply.text[9000:]
     try:
-        lark_user.update_text(placeholder_id, first)
+        if placeholder_id:
+            lark_user.update_text(placeholder_id, first)
+        else:
+            _say(first)
     except Exception:
-        lark_user.send_text(chat_id, first)
+        _say(first)
     if rest:
-        lark_user.send_text(chat_id, rest)
+        _say(rest)
 
 
 def _p2p_chats() -> list[dict]:
@@ -306,7 +320,10 @@ def run_bot() -> None:
 
     chats: list[dict] = []
     cursors: dict[str, int] = {}
+    threads: dict[str, dict] = {}   # thread_id → chat dict
+    tcursors: dict[str, int] = {}
     last_chat_refresh = 0.0
+    my_id = my.get("open_id", "")
 
     while True:
         try:
@@ -314,8 +331,9 @@ def run_bot() -> None:
             if time.time() - last_chat_refresh > CHAT_REFRESH or not chats:
                 chats = lark_user.list_chats() + _p2p_chats()
                 last_chat_refresh = time.time()
-                log.info("Đang theo dõi %d chat (gồm %d chat riêng)",
-                         len(chats), sum(1 for c in chats if c.get("chat_type") == "p2p"))
+                log.info("Đang theo dõi %d chat (gồm %d chat riêng), %d thread",
+                         len(chats), sum(1 for c in chats if c.get("chat_type") == "p2p"),
+                         len(threads))
 
             for chat in chats:
                 cid = chat["chat_id"]
@@ -329,14 +347,38 @@ def run_bot() -> None:
                 for m in msgs:
                     create_sec = int(int(m.get("create_time", "0")) / 1000)
                     latest = max(latest, create_sec + 1)
-                    sender_id = m.get("sender", {}).get("id", "")
-                    if sender_id == my.get("open_id"):
-                        continue  # tin của chính Jenny
+                    # Phát hiện thread để theo dõi reply theo luồng
+                    tid = m.get("thread_id")
+                    if tid and tid not in threads:
+                        threads[tid] = chat
+                        tcursors[tid] = create_sec  # đọc reply MỚI kể từ khi phát hiện
+                    if m.get("sender", {}).get("id", "") == my_id:
+                        continue
                     try:
-                        asyncio.run(_handle_message(chat, m, my.get("open_id", "")))
+                        asyncio.run(_handle_message(chat, m, my_id))
                     except Exception:
                         log.exception("handle_message lỗi")
                 cursors[cid] = latest
+
+            # Poll reply trong các thread đã biết (tin tag trong thread chỉ hiện ở đây)
+            for tid, chat in list(threads.items()):
+                since = tcursors.get(tid, now_sec)
+                try:
+                    tmsgs = lark_user.list_thread_messages(tid, since)
+                except Exception as e:
+                    log.debug("Đọc thread %s lỗi: %s", tid, e)
+                    continue
+                latest = since
+                for m in tmsgs:
+                    create_sec = int(int(m.get("create_time", "0")) / 1000)
+                    latest = max(latest, create_sec + 1)
+                    if m.get("sender", {}).get("id", "") == my_id:
+                        continue
+                    try:
+                        asyncio.run(_handle_message(chat, m, my_id, in_thread=True))
+                    except Exception:
+                        log.exception("handle_message (thread) lỗi")
+                tcursors[tid] = latest
         except Exception:
             log.exception("Vòng poll lỗi — tiếp tục")
         time.sleep(POLL_INTERVAL)

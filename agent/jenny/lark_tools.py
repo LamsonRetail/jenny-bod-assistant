@@ -328,6 +328,71 @@ async def recent_resources(args: dict) -> dict:
         return _err(e)
 
 
+# ---------- Lịch chạy định kỳ (tự đặt từ chat) ----------
+
+def _cron_from_vn(minute: str, hour: str, dom: str, mon: str, dow: str) -> str:
+    return f"{minute} {hour} {dom} {mon} {dow}"
+
+
+@tool("schedule_create",
+      "Tạo nhiệm vụ ĐỊNH KỲ cho chính Jenny khi người dùng yêu cầu 'cập nhật/nhắc/báo cáo "
+      "mỗi X'. cron: cú pháp cron giờ VN (mỗi giờ='0 * * * *'; mỗi 30 phút='*/30 * * * *'; "
+      "8h sáng hằng ngày='0 8 * * *'; mỗi thứ 2='0 9 * * 1'). prompt: việc Jenny sẽ làm mỗi "
+      "lần chạy (mô tả rõ, độc lập, không hỏi lại). chat_id + channel(lark/telegram) = nơi "
+      "gửi kết quả (lấy từ bối cảnh hội thoại hiện tại). name: tên ngắn gợi nhớ.",
+      {"name": str, "cron": str, "prompt": str, "chat_id": str, "channel": str})
+async def schedule_create(args: dict) -> dict:
+    try:
+        cron = (args.get("cron") or "").strip()
+        if len(cron.split()) != 5:
+            return _text("cron phải có 5 trường 'phút giờ ngày tháng thứ' (giờ VN). "
+                         "Mỗi giờ = '0 * * * *'.")
+        row = db.sb().table("scheduled_tasks").insert({
+            "name": args["name"], "cron": cron, "prompt": args["prompt"],
+            "channel": (args.get("channel") or "lark"),
+            "chat_id": args["chat_id"], "enabled": True,
+        }).execute().data[0]
+        return _text(f"Đã đặt lịch [{row['id']}] '{args['name']}' — cron `{cron}` (giờ VN). "
+                     "Em sẽ tự chạy và gửi vào chat này theo lịch.")
+    except Exception as e:
+        return _err(e)
+
+
+@tool("schedule_list",
+      "Liệt kê các lịch chạy định kỳ hiện có (kèm id, cron, trạng thái). Lọc theo chat_id "
+      "nếu truyền (bỏ trống = tất cả).", {"chat_id": str})
+async def schedule_list(args: dict) -> dict:
+    try:
+        q = db.sb().table("scheduled_tasks").select("*").order("created_at")
+        cid = (args.get("chat_id") or "").strip()
+        if cid:
+            q = q.eq("chat_id", cid)
+        rows = q.execute().data
+        if not rows:
+            return _text("Chưa có lịch chạy nào.")
+        return _text("\n".join(
+            f"- [{r['id']}] {r['name']} · cron `{r['cron']}` · "
+            f"{'BẬT' if r['enabled'] else 'TẮT'} · gửi {r['channel']}/{r['chat_id']}"
+            for r in rows))
+    except Exception as e:
+        return _err(e)
+
+
+@tool("schedule_delete",
+      "Xóa (hoặc tắt) 1 lịch chạy định kỳ theo id. disable_only=true để chỉ tạm tắt.",
+      {"schedule_id": str, "disable_only": bool})
+async def schedule_delete(args: dict) -> dict:
+    try:
+        sid = args["schedule_id"]
+        if args.get("disable_only"):
+            db.sb().table("scheduled_tasks").update({"enabled": False}).eq("id", sid).execute()
+            return _text("Đã tắt lịch (giữ lại để bật lại sau).")
+        db.sb().table("scheduled_tasks").delete().eq("id", sid).execute()
+        return _text("Đã xóa lịch.")
+    except Exception as e:
+        return _err(e)
+
+
 # ---------- Việc BOD giao (assignments) ----------
 
 @tool("assignment_create",
@@ -539,4 +604,5 @@ lark_server = create_sdk_mcp_server(
            notebooklm_ask, notebooklm_add_source, notebooklm_audio_overview,
            assignment_create, assignment_list, assignment_update,
            assignment_remind, assignment_notify_assigner,
+           schedule_create, schedule_list, schedule_delete,
            memory_save, memory_index, memory_read])

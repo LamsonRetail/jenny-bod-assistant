@@ -57,6 +57,8 @@ ALLOWED_TOOLS = ["WebSearch", "WebFetch",
                  "mcp__lark__assignment_create", "mcp__lark__assignment_list",
                  "mcp__lark__assignment_update", "mcp__lark__assignment_remind",
                  "mcp__lark__assignment_notify_assigner",
+                 "mcp__lark__schedule_create", "mcp__lark__schedule_list",
+                 "mcp__lark__schedule_delete",
                  "mcp__lark__memory_save", "mcp__lark__memory_index", "mcp__lark__memory_read"]
 DISALLOWED_TOOLS = ["Bash", "Write", "Edit", "NotebookEdit", "Task"]
 

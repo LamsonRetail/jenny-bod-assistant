@@ -181,6 +181,26 @@ def list_messages(chat_id: str, start_time_sec: int) -> list[dict]:
     return data.get("items", [])
 
 
+def list_thread_messages(thread_id: str, start_time_sec: int) -> list[dict]:
+    """Tin trong 1 thread/topic — reply theo luồng KHÔNG hiện ở container chat."""
+    data = _get("/im/v1/messages", {
+        "container_id_type": "thread", "container_id": thread_id,
+        "start_time": start_time_sec, "sort_type": "ByCreateTimeAsc",
+        "page_size": 50,
+    })
+    return data.get("items", [])
+
+
+def reply_in_thread(message_id: str, text: str) -> str:
+    """Trả lời vào đúng thread chứa message_id. Trả về message_id tin mới."""
+    data = _post(f"/im/v1/messages/{message_id}/reply", {
+        "msg_type": "text",
+        "content": json.dumps({"text": text[:9000]}, ensure_ascii=False),
+        "reply_in_thread": True,
+    })
+    return data.get("message_id", "")
+
+
 def send_text_to_user(open_id: str, text: str) -> str:
     """Nhắn riêng theo open_id (tự mở p2p chat) — trả về chat_id của chat riêng."""
     data = _post("/im/v1/messages", {
