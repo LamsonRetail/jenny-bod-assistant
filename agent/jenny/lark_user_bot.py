@@ -16,6 +16,7 @@ log = logging.getLogger(__name__)
 
 POLL_INTERVAL = 5          # giây giữa các vòng đọc tin
 CHAT_REFRESH = 120         # giây giữa các lần làm mới danh sách chat
+THREAD_LOOKBACK = 7200     # quét phát hiện thread trong 2h gần đây
 
 
 def _admin_ids() -> set[str]:
@@ -335,6 +336,21 @@ def run_bot() -> None:
             if time.time() - last_chat_refresh > CHAT_REFRESH or not chats:
                 chats = lark_user.list_chats() + _p2p_chats()
                 last_chat_refresh = time.time()
+                # Phát hiện thread: quét tin 2h gần đây ở mỗi group (thread root/tin
+                # có thread_id) — vì reply tag trong thread không hiện ở container chat.
+                for chat in chats:
+                    if chat.get("chat_type") == "p2p":
+                        continue
+                    try:
+                        recent = lark_user.list_messages(chat["chat_id"],
+                                                         now_sec - THREAD_LOOKBACK)
+                    except Exception:
+                        continue
+                    for m in recent:
+                        tid = m.get("thread_id")
+                        if tid and tid not in threads:
+                            threads[tid] = chat
+                            tcursors[tid] = now_sec - THREAD_LOOKBACK  # đọc reply gần đây
                 log.info("Đang theo dõi %d chat (gồm %d chat riêng), %d thread",
                          len(chats), sum(1 for c in chats if c.get("chat_type") == "p2p"),
                          len(threads))
