@@ -332,6 +332,24 @@ def run_bot() -> None:
     last_chat_refresh = 0.0
     my_id = my.get("open_id", "")
 
+    # Thread đã biết được LƯU BỀN qua config → restart vẫn nhớ, không mất dấu
+    # (trước đây restart xoá sạch threads, tag trong thread cũ không được trả lời).
+    known_threads: dict[str, str] = dict(
+        db.all_configs().get("lark_known_threads", {}) or {})
+    persisted_loaded = False
+
+    def _persist_thread(tid: str, cid: str) -> None:
+        if not tid or known_threads.get(tid) == cid:
+            return
+        known_threads[tid] = cid
+        try:
+            db.sb().table("configs").upsert({
+                "key": "lark_known_threads", "value": known_threads,
+                "description": "Thread Jenny đang theo dõi (bền qua restart)",
+            }, on_conflict="key").execute()
+        except Exception:
+            log.warning("Không lưu được lark_known_threads")
+
     def _seen(mid: str) -> bool:
         """True nếu message_id đã xử lý (và đánh dấu nếu chưa)."""
         if not mid or mid in handled:
@@ -348,6 +366,15 @@ def run_bot() -> None:
             if time.time() - last_chat_refresh > CHAT_REFRESH or not chats:
                 chats = lark_user.list_chats() + _p2p_chats()
                 last_chat_refresh = time.time()
+                chat_by_id = {c["chat_id"]: c for c in chats}
+                # Nạp thread đã biết (lưu bền) — chỉ đọc reply MỚI sau restart, tránh
+                # trả lời lại tin cũ; nhưng vẫn giữ theo dõi các thread cũ.
+                if not persisted_loaded:
+                    for tid, cid in known_threads.items():
+                        if tid not in threads and cid in chat_by_id:
+                            threads[tid] = chat_by_id[cid]
+                            tcursors[tid] = now_sec
+                    persisted_loaded = True
                 # Phát hiện thread: quét tin 2h gần đây ở mỗi group (thread root/tin
                 # có thread_id) — vì reply tag trong thread không hiện ở container chat.
                 for chat in chats:
@@ -363,6 +390,7 @@ def run_bot() -> None:
                         if tid and tid not in threads:
                             threads[tid] = chat
                             tcursors[tid] = now_sec - THREAD_LOOKBACK  # đọc reply gần đây
+                            _persist_thread(tid, chat["chat_id"])
                 log.info("Đang theo dõi %d chat (gồm %d chat riêng), %d thread",
                          len(chats), sum(1 for c in chats if c.get("chat_type") == "p2p"),
                          len(threads))
@@ -384,6 +412,7 @@ def run_bot() -> None:
                     if tid and tid not in threads:
                         threads[tid] = chat
                         tcursors[tid] = create_sec  # đọc reply MỚI kể từ khi phát hiện
+                        _persist_thread(tid, chat["chat_id"])
                     if m.get("sender", {}).get("id", "") == my_id:
                         continue
                     if _seen(m.get("message_id", "")):
