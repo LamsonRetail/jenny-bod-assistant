@@ -623,10 +623,15 @@ async def decision_update(args: dict) -> dict:
       "Tạo phép GIÁM SÁT SỐ LIỆU tự động. kind='anomaly': cảnh báo khi số liệu lệch bất "
       "thường — `sql` phải trả 2 cột d (DATE) và v (số), 1 dòng/ngày, phủ ít nhất 8 tuần "
       "gần nhất (hệ thống tự so với cùng thứ trong tuần, dùng median+MAD). "
-      "kind='signpost': ngưỡng kích hoạt review kế hoạch — `sql` trả 1 dòng 1 cột v, "
-      "báo khi chạm threshold_value theo direction. "
-      "direction: both|down|up (chỉ báo khi giảm/tăng). check_cron: giờ VN, mặc định "
-      "'0 9,15,21 * * *'. chat_id lấy từ bối cảnh hội thoại. "
+      "kind='signpost': ngưỡng kích hoạt review kế hoạch — `sql` trả 1 dòng 1 cột v; "
+      "báo khi **v <= threshold_value** (direction=down) hoặc **v >= threshold_value** "
+      "(direction=up). Chọn ngưỡng sao cho mức BÌNH THƯỜNG KHÔNG chạm: nếu bình thường "
+      "là 4 và muốn báo khi thiếu, đặt threshold_value=3 (không phải 4). "
+      "direction: both|down|up. Với chỉ số kinh doanh (doanh thu, đơn hàng) hầu như luôn "
+      "dùng **down** — tăng mạnh do campaign KHÔNG phải điều BOD cần bị đánh thức. "
+      "check_cron: giờ VN, mặc định '0 9,15,21 * * *'; nếu chỉ số tính theo NGÀY thì SQL "
+      "phải loại trừ hôm nay (ngày chưa trọn sẽ luôn trông như tụt mạnh). "
+      "chat_id lấy từ bối cảnh hội thoại. "
       "LUÔN chạy thử SQL bằng bq_query trước để chắc chắn đúng cột và có dữ liệu.",
       {"name": str, "sql": str, "metric_label": str, "unit": str, "chat_id": str,
        "kind": str, "direction": str, "check_cron": str, "threshold_high": str,

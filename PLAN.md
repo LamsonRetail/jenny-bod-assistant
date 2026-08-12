@@ -226,10 +226,15 @@ Lark Meeting Agent (Anycross) ───┘     → Drive Jenny-BOD-Memory/meetin
 
 > Cơ sở lựa chọn: [RESEARCH.md](RESEARCH.md) (khảo sát thị trường trợ lý board, thiết bị ngoài, decision intelligence — 2026-08-12).
 >
-> **Trạng thái 2026-08-12: đã code + deploy 10.1–10.4, 11.1–11.3.**
-> Còn lại: chạy 4 migration `0008`–`0011` trên Supabase · tạo lịch digest thứ 2 ·
-> `ELEVENLABS_API_KEY` cho bản audio · 11.4 chờ spike · 11.5 còn phần S&OP.
+> **Trạng thái 2026-08-12: 10.1–10.4 và 11.1–11.2 ĐANG CHẠY THẬT.**
+> Migration `0008`–`0011` đã chạy trên Supabase; 2 monitor đầu tiên + lịch digest thứ 2
+> đã tạo. Còn lại: `ELEVENLABS_API_KEY` cho bản audio (11.3) · 11.4 chờ spike ·
+> 11.5 chờ file S&OP đã chốt.
 > Bảng trạng thái chi tiết: [FEATURES.md mục 10](FEATURES.md).
+>
+> **Kết nối Postgres trực tiếp** (để chạy DDL, PostgREST không làm được):
+> host `aws-1-ap-northeast-2.pooler.supabase.com:5432`, user `postgres.<project_ref>`,
+> mật khẩu ở `config/secrets/supabase.env` (`SUPABASE_DB_PASSWORD`).
 
 ## Nguyên tắc xuyên suốt (rút từ nghiên cứu)
 

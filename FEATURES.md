@@ -157,6 +157,9 @@ Nguyên tắc: **thống kê phát hiện, LLM chỉ diễn giải** — không 
 - **Sàn nhiễu 5%**: giả định chỉ số luôn dao động tự nhiên ít nhất 5% — chống báo động giả khi chuỗi quá phẳng.
 - **Blackout** ngày campaign/lễ (8/8, 9/9, 11/11, Tết…) và **cooldown** theo từng phép giám sát.
 - **Phân tầng**: mức cao → nhắn ngay · trung bình → gom vào brief/digest · thấp → chỉ ghi log.
+- **Bài học từ backtest trên 120 ngày dữ liệu thật**: báo cả 2 chiều cho ra **25 cảnh báo/90 ngày** (1 lần mỗi 3.6 ngày — nhiễu vô dụng, gần như toàn bộ là doanh thu TĂNG trong campaign). Chỉ báo khi **giảm** (`direction='down'`) còn **4 cảnh báo/90 ngày**, cả 4 đều là ngày tụt thật 20–36%. → Với chỉ số kinh doanh, mặc định luôn dùng `down`.
+- **SQL của monitor theo ngày phải loại trừ hôm nay** — ngày chưa trọn luôn trông như tụt mạnh.
+- Ngưỡng signpost so sánh `v <= threshold` (down): bình thường 4 brand thì đặt ngưỡng **3**, không phải 4.
 - Diễn giải do agent viết (được phép chạy `bq_query` bóc tách nguyên nhân), kết bằng 1 khuyến nghị.
 - Tools: `monitor_create` / `monitor_list` / `monitor_delete` · `anomaly_recent`.
 
@@ -283,17 +286,23 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 | # | Tính năng | Trạng thái |
 |---|---|---|
-| 10.1 | Voice note trong Lark | ✅ đã code + deploy |
-| 10.2 | Cảnh báo bất thường số liệu | ✅ đã code + deploy · cần chạy migration `0008` |
-| 10.3 | Digest thứ 2 + tỷ lệ hoàn thành cam kết | ✅ tool + skill xong · **cần tạo lịch digest** |
-| 10.4 | Tự động đôn đốc việc đã giao | ✅ đã code + deploy · cần migration `0009` |
-| 11.1 | Sổ quyết định + tự đo kết quả | ✅ đã code + deploy · cần migration `0010` |
-| 11.2 | Decision brief + pre-mortem | ✅ skill `decision-support` · cần migration `0011` |
-| 11.3 | Brief sáng dạng âm thanh | ✅ đã code · **cần `ELEVENLABS_API_KEY`** rồi bật trong `audio_brief` |
+| 10.1 | Voice note trong Lark | ✅ **đang chạy** |
+| 10.2 | Cảnh báo bất thường số liệu | ✅ **đang chạy** — 2 monitor đầu tiên đã tạo |
+| 10.3 | Digest thứ 2 + tỷ lệ hoàn thành cam kết | ✅ **đang chạy** — lịch 8:00 thứ 2 |
+| 10.4 | Tự động đôn đốc việc đã giao | ✅ **đang chạy** |
+| 11.1 | Sổ quyết định + tự đo kết quả | ✅ **đang chạy** |
+| 11.2 | Decision brief + pre-mortem | ✅ **đang chạy** (skill `decision-support`) |
+| 11.3 | Brief sáng dạng âm thanh | 🟡 code xong · **cần `ELEVENLABS_API_KEY`** rồi bật trong config `audio_brief` |
 | 11.4 | Thẻ tương tác 1 chạm | ⏸ chờ spike kỹ thuật (Lark có thể chặn card từ user token) |
-| 11.5 | Ngoại lệ S&OP + signpost | 🟡 hạ tầng signpost xong (`monitors.kind='signpost'`) · còn phần S&OP |
+| 11.5 | Ngoại lệ S&OP + signpost | 🟡 signpost đã chạy · phần S&OP chờ file kế hoạch đã chốt |
 
-**Việc cần làm để chạy đầy đủ**: chạy 4 migration `0008`–`0011` trên Supabase SQL Editor (kèm `NOTIFY pgrst, 'reload schema';`), tạo phép giám sát đầu tiên bằng `monitor_create`, tạo lịch digest thứ 2, và thêm `ELEVENLABS_API_KEY` nếu muốn bản audio.
+Migration `0008`–`0011` đã chạy trên Supabase (2026-08-12).
+
+**Đang giám sát**
+| Monitor | Loại | Lịch chạy | Quy tắc |
+|---|---|---|---|
+| Doanh thu ngày toàn LSR | anomaly | 9:00 hằng ngày | chỉ báo khi **giảm** bất thường so với cùng thứ trong tuần |
+| Dữ liệu ETL đủ 4 brand | signpost | 9:00 & 14:00 | báo khi chỉ còn ≤3 brand có dữ liệu (ETL trễ) |
 
 ### Đợt 3 — Thiết bị *(pilot nhỏ, sau Đợt 1–2)*
 Máy ghi âm **Plaud NotePin** cho họp offline (test chất lượng nghe tiếng Việt trước) · màn hình **e-ink để bàn** · **podcast riêng tư** nghe qua CarPlay · dashboard TV kèm lời bình.
