@@ -228,8 +228,8 @@ Lark Meeting Agent (Anycross) ───┘     → Drive Jenny-BOD-Memory/meetin
 >
 > **Trạng thái 2026-08-12: 10.1–10.4 và 11.1–11.2 ĐANG CHẠY THẬT.**
 > Migration `0008`–`0011` đã chạy trên Supabase; 2 monitor đầu tiên + lịch digest thứ 2
-> đã tạo. Còn lại: `ELEVENLABS_API_KEY` cho bản audio (11.3) · 11.4 chờ spike ·
-> 11.5 chờ file S&OP đã chốt.
+> đã tạo. Còn lại: 11.4 chờ spike · 11.5 chờ file S&OP đã chốt.
+> **11.3 (brief dạng âm thanh): ĐÃ BỎ** theo yêu cầu — code đã gỡ 2026-08-12.
 > Bảng trạng thái chi tiết: [FEATURES.md mục 10](FEATURES.md).
 >
 > **Kết nối Postgres trực tiếp** (để chạy DDL, PostgREST không làm được):
@@ -422,8 +422,8 @@ ghi quyết định (kèm dự đoán) → brief có phương án/rủi ro/khuy�
 
 ---
 
-### 11.3 — Brief sáng dạng âm thanh
-*Ước lượng: 2–3 ngày*
+### 11.3 — Brief sáng dạng âm thanh ❌ **ĐÃ BỎ** *(2026-08-12, theo yêu cầu — code đã gỡ)*
+*Giữ lại mô tả bên dưới để lưu vết lý do thiết kế, không triển khai.*
 
 **Mục tiêu:** nghe brief trên đường đi làm thay vì đọc. Đây là **cách khả thi duy nhất để "tích hợp xe hơi"** (CarPlay/Android Auto đã khoá cửa với trợ lý bên thứ ba).
 

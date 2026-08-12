@@ -68,16 +68,7 @@ async def _run_task(row: dict) -> None:
     for attempt in (1, 2):  # thử lại 1 lần sau 60s nếu lỗi
         try:
             reply = await agent.run(prompt, system_prompt)
-            channel = row.get("channel") or "lark"
-            _send_result(channel, row["chat_id"], reply.text)
-            # Lịch được đánh dấu trong config `audio_brief` → gửi thêm bản đọc thành tiếng
-            try:
-                from . import tts
-                if str(row["id"]) in tts.audio_schedule_ids():
-                    await tts.send_audio_version(channel, row["chat_id"], reply.text,
-                                                 row["name"])
-            except Exception:
-                log.exception("Bản audio lỗi — bản chữ đã gửi xong")
+            _send_result(row.get("channel") or "lark", row["chat_id"], reply.text)
             db.log_tool_call(reply.session_id, None, "scheduled_task",
                              {"name": row["name"]}, result_summary="sent")
             log.info("Task '%s' xong (lần %d), đã gửi %s/%s",

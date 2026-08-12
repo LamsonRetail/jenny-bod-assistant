@@ -3,7 +3,7 @@
 > Cập nhật: 2026-08-12 · Trạng thái: **đang vận hành** (Phase 0–3 hoàn chỉnh + nhiều mở rộng ngoài plan)
 > Tài liệu này mô tả **chi tiết những gì Jenny đang làm được**, đối chiếu với kế hoạch gốc ([PLAN.md](PLAN.md)) và ghi rõ những thay đổi so với plan.
 >
-> Sắp làm: **Đợt 1 & Đợt 2** — kế hoạch chi tiết ở [PLAN.md mục 10–11](PLAN.md); cơ sở lựa chọn ở [RESEARCH.md](RESEARCH.md). Tóm tắt ở mục 10 bên dưới.
+> **Đợt 1 & Đợt 2 đã đưa vào vận hành** (2026-08-12) — trạng thái từng mục ở mục 10 bên dưới; kế hoạch gốc ở [PLAN.md mục 10–11](PLAN.md), cơ sở lựa chọn ở [RESEARCH.md](RESEARCH.md).
 
 ---
 
@@ -180,10 +180,7 @@ Vòng lặp không công cụ nào trên thị trường làm đủ:
 - Tools: `decision_log` / `decision_list` / `decision_update`.
 - Skill `decision-support`: mẫu **decision brief 7 phần** (kiểu 6-pager), **pre-mortem**, red-team tự phản biện.
 
-### 4.18. Brief sáng dạng âm thanh ⭐ *(Đợt 2)*
-- Lịch nào được liệt kê trong config `audio_brief.schedule_ids` sẽ có thêm **bản đọc thành tiếng** gửi vào chat.
-- Bản đọc được **viết lại riêng cho tai nghe** (bỏ markdown/bảng, số làm tròn, câu ngắn, 2–3 phút) chứ không TTS thẳng bản chữ.
-- ElevenLabs multilingual; cần `ELEVENLABS_API_KEY`. Chưa có key thì tự tắt, bản chữ vẫn gửi bình thường.
+*(Brief sáng dạng âm thanh: đã bỏ theo yêu cầu — xem mục 10.)*
 
 ---
 
@@ -244,7 +241,7 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 `persona`, `company_instructions`, `reply_rules` (trigger_names…), `bq_data_dictionary` (project_id + link wiki), `internal_docs`, `drive_memory_folder` / `lark_memory`, `notebooklm`, `transcribe_server`, `lark_admin_ids`, `lark_p2p_partners`, `lark_p2p_map`, `lark_known_threads`, `bod_members`, `meeting_authorized_ids`, `org_sync` / `org_chart_file`, `doc_comment_cursor`, `lark_user_token`.
 
-Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `tts` ⭐ · `audio_brief` ⭐ (danh sách lịch cần đọc thành tiếng).
+Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐.
 
 **Skills đang có**: `web-research` ✅, `bigquery-analytics` ✅, `internal-knowledge` ✅, `memory`, `decision-support` ⭐, `proactive-monitoring` ⭐ (kèm các skill nghiệp vụ bổ sung trên Supabase). Thêm/bật/tắt skill từ dashboard → Jenny nạp lại ở phiên mới.
 
@@ -292,7 +289,7 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 | 10.4 | Tự động đôn đốc việc đã giao | ✅ **đang chạy** |
 | 11.1 | Sổ quyết định + tự đo kết quả | ✅ **đang chạy** |
 | 11.2 | Decision brief + pre-mortem | ✅ **đang chạy** (skill `decision-support`) |
-| 11.3 | Brief sáng dạng âm thanh | 🟡 code xong · **cần `ELEVENLABS_API_KEY`** rồi bật trong config `audio_brief` |
+| 11.3 | Brief sáng dạng âm thanh | ❌ **bỏ** — user không cần (code đã gỡ 2026-08-12) |
 | 11.4 | Thẻ tương tác 1 chạm | ⏸ chờ spike kỹ thuật (Lark có thể chặn card từ user token) |
 | 11.5 | Ngoại lệ S&OP + signpost | 🟡 signpost đã chạy · phần S&OP chờ file kế hoạch đã chốt |
 

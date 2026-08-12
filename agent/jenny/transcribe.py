@@ -48,6 +48,13 @@ def transcribe_audio(data: bytes, mime: str, title: str = "meeting") -> str:
                    data={"meeting_title": title},
                    files={"file": (f"meeting{ext}", data, mime)},
                    headers=_HEADERS, timeout=600)
+    # Server tắt / URL ngrok đã đổi → trả về HTML thay vì JSON. Báo đúng bệnh,
+    # đừng để lỗi JSONDecodeError khó hiểu nổi lên trên.
+    if r.status_code != 200 or "json" not in r.headers.get("content-type", ""):
+        raise RuntimeError(
+            f"máy gỡ băng (Whisper server) không phản hồi đúng — HTTP {r.status_code} "
+            f"tại {base}. Nhiều khả năng server đã tắt hoặc URL ngrok đã đổi; "
+            "cập nhật lại config `transcribe_server.base_url` trên dashboard.")
     job = r.json()
     job_id = job.get("job_id")
     if not job_id:

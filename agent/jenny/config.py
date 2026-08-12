@@ -31,9 +31,6 @@ LARK_APP_SECRET = os.environ.get("LARK_APP_SECRET", "")
 # Lark Suite quốc tế; tenant Feishu (TQ) thì đổi thành https://open.feishu.cn
 LARK_DOMAIN = os.environ.get("LARK_DOMAIN", "https://open.larksuite.com")
 
-# Đọc brief thành giọng nói (Đợt 2) — chưa có key thì tính năng tự tắt
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
-
 AGENT_NAME = "jenny"
 MAX_HISTORY_MESSAGES = 12          # số tin nhắn gần nhất đưa vào ngữ cảnh
 TELEGRAM_MAX_LEN = 4096

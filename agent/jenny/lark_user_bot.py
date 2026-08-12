@@ -220,10 +220,10 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
         try:
             text = _voice_transcript(chat, msg, in_thread)
             is_voice = bool(text)
-        except Exception:
+        except Exception as e:
             log.exception("Gỡ băng tin thoại lỗi")
-            _say("Em nhận được tin thoại nhưng nghe không được ạ. "
-                 "Anh/chị nhắn lại bằng chữ giúp em nhé.")
+            _say(f"Em nhận được tin thoại nhưng chưa gỡ băng được ạ — {str(e)[:250]}\n\n"
+                 "Trong lúc chờ, anh/chị nhắn lại bằng chữ giúp em nhé.")
             return
 
     if not text:
