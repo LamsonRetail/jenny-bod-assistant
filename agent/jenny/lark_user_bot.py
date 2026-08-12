@@ -42,6 +42,51 @@ def _parse_text(msg: dict) -> str:
     return text.strip()
 
 
+def _voice_cfg() -> dict:
+    """Cấu hình xử lý tin nhắn thoại (config `voice_note`)."""
+    cfg = db.all_configs().get("voice_note", {}) or {}
+    return {
+        "enabled": cfg.get("enabled", True),
+        "max_duration_sec": int(cfg.get("max_duration_sec", 300)),
+        "group_requires_reply": cfg.get("group_requires_reply", True),
+        "echo_transcript": cfg.get("echo_transcript", True),
+    }
+
+
+def _voice_transcript(chat: dict, msg: dict, in_thread: bool) -> str:
+    """Tin nhắn thoại Lark → văn bản. Trả '' nếu không thuộc diện xử lý.
+
+    Lọc để không gỡ băng tràn lan (tốn tiền): chat riêng luôn xử lý; trong group
+    chỉ xử lý khi tin nằm trong thread Jenny theo dõi hoặc là reply của tin khác.
+    """
+    from . import transcribe
+
+    cfg = _voice_cfg()
+    if not cfg["enabled"]:
+        return ""
+    is_group = chat.get("chat_mode", "group") == "group" and chat.get("chat_type") != "p2p"
+    if is_group and cfg["group_requires_reply"] and not (in_thread or msg.get("parent_id")):
+        return ""
+
+    try:
+        body = json.loads(msg["body"]["content"])
+    except Exception:
+        return ""
+    file_key = body.get("file_key", "")
+    if not file_key:
+        return ""
+    dur_sec = int(body.get("duration") or 0) / 1000
+    if dur_sec > cfg["max_duration_sec"]:
+        log.info("Bỏ qua tin thoại dài %.0fs (ngưỡng %ds)", dur_sec, cfg["max_duration_sec"])
+        return ""
+
+    data, _ = lark_user.download_message_resource(msg["message_id"], file_key)
+    text = transcribe.transcribe_audio(transcribe.to_wav(data), "audio/wav",
+                                       title="voice-note")
+    log.info("Tin thoại %.0fs → %d ký tự", dur_sec, len(text))
+    return text.strip()
+
+
 def _mentioned_me(msg: dict, my_open_id: str, text: str) -> bool:
     for m in (msg.get("mentions") or []):
         if m.get("id") == my_open_id or m.get("id", {}) == {"open_id": my_open_id}:
@@ -168,6 +213,19 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
             return
     except Exception:
         log.exception("meeting recording check lỗi")
+
+    # Tin nhắn thoại → gỡ băng rồi xử lý như tin chữ
+    is_voice = False
+    if not text and msg.get("msg_type") == "audio":
+        try:
+            text = _voice_transcript(chat, msg, in_thread)
+            is_voice = bool(text)
+        except Exception:
+            log.exception("Gỡ băng tin thoại lỗi")
+            _say("Em nhận được tin thoại nhưng nghe không được ạ. "
+                 "Anh/chị nhắn lại bằng chữ giúp em nhé.")
+            return
+
     if not text:
         return
     chat_id = chat["chat_id"]
@@ -175,7 +233,7 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     sender_id = (msg.get("sender", {}).get("id") or "")
 
     conv = db.get_or_create_conversation("lark", chat_id, chat.get("name"), is_group)
-    db.log_message(conv["id"], "in", text, sender_id=sender_id)
+    db.log_message(conv["id"], "in", ("🎤 " if is_voice else "") + text, sender_id=sender_id)
 
     low = text.lower().strip()
     if low.startswith("/id"):
@@ -189,7 +247,10 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
             _say("Anh/chị không có quyền duyệt chat này.")
         return
 
-    if is_group and not _mentioned_me(msg, my_open_id, text):
+    # Tin thoại trong thread Jenny đang theo dõi: coi như đang nói với Jenny
+    # (người nói không "tag" được ai trong tin thoại).
+    if is_group and not (is_voice and in_thread) \
+            and not _mentioned_me(msg, my_open_id, text):
         return
     if not conv["whitelisted"]:
         _say("Chat này chưa được duyệt sử dụng Jenny.\n"
@@ -262,7 +323,11 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     db.log_message(conv["id"], "out", reply.text, session_id=reply.session_id,
                    tokens_input=usage.get("input_tokens"),
                    tokens_output=usage.get("output_tokens"))
-    first, rest = reply.text[:9000], reply.text[9000:]
+    # Tin thoại: chép lại nội dung nghe được để người nói phát hiện ngay nếu nghe sai
+    display = reply.text
+    if is_voice and _voice_cfg()["echo_transcript"]:
+        display = f"🎤 Em nghe: «{text[:300]}»\n\n{reply.text}"
+    first, rest = display[:9000], display[9000:]
     try:
         if placeholder_id:
             lark_user.update_text(placeholder_id, first)

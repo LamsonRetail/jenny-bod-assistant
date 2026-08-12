@@ -136,5 +136,33 @@ async def bq_recent_queries(args: dict) -> dict:
     return _text(json.dumps(rows, ensure_ascii=False, indent=1)[:20000])
 
 
+@tool("anomaly_recent",
+      "Lấy các CẢNH BÁO BẤT THƯỜNG số liệu mà hệ thống giám sát đã phát hiện gần đây "
+      "(do thống kê phát hiện, đã kèm diễn giải). days: số ngày nhìn lại (mặc định 7). "
+      "only_pending=true: chỉ lấy cảnh báo chưa gửi cho BOD (mức trung bình — dùng khi "
+      "viết digest/brief để gom vào). Dùng khi viết brief sáng, digest thứ 2, hoặc khi "
+      "được hỏi 'tuần này có gì bất thường'.",
+      {"days": int, "only_pending": bool})
+async def anomaly_recent(args: dict) -> dict:
+    try:
+        from . import anomaly
+        rows = anomaly.recent_events(int(args.get("days") or 7),
+                                     bool(args.get("only_pending")))
+        if not rows:
+            return _text("Không có cảnh báo bất thường nào trong khoảng này.")
+        out = []
+        for r in rows:
+            out.append({
+                "monitor": r.get("monitor_name"), "khi": str(r.get("created_at"))[:16],
+                "muc_do": r.get("severity"), "gia_tri": r.get("value"),
+                "muc_thuong_thay": r.get("baseline"), "lech_pct": r.get("pct_change"),
+                "da_gui_BOD": r.get("notified"), "dien_giai": r.get("narrative"),
+            })
+        return _text(json.dumps(out, ensure_ascii=False, indent=1, default=str)[:20000])
+    except Exception as e:
+        return _text(f"Lỗi: {e}")
+
+
 bq_server = create_sdk_mcp_server(name="bq", version="1.0.0",
-                                  tools=[get_data_dictionary, bq_query, bq_recent_queries])
+                                  tools=[get_data_dictionary, bq_query, bq_recent_queries,
+                                         anomaly_recent])

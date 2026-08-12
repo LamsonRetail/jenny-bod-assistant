@@ -68,7 +68,16 @@ async def _run_task(row: dict) -> None:
     for attempt in (1, 2):  # thử lại 1 lần sau 60s nếu lỗi
         try:
             reply = await agent.run(prompt, system_prompt)
-            _send_result(row.get("channel") or "lark", row["chat_id"], reply.text)
+            channel = row.get("channel") or "lark"
+            _send_result(channel, row["chat_id"], reply.text)
+            # Lịch được đánh dấu trong config `audio_brief` → gửi thêm bản đọc thành tiếng
+            try:
+                from . import tts
+                if str(row["id"]) in tts.audio_schedule_ids():
+                    await tts.send_audio_version(channel, row["chat_id"], reply.text,
+                                                 row["name"])
+            except Exception:
+                log.exception("Bản audio lỗi — bản chữ đã gửi xong")
             db.log_tool_call(reply.session_id, None, "scheduled_task",
                              {"name": row["name"]}, result_summary="sent")
             log.info("Task '%s' xong (lần %d), đã gửi %s/%s",
@@ -121,9 +130,12 @@ def run_scheduler() -> None:
         try:
             now = dt.datetime.now(VN)
             _maybe_sync_org()
-            from . import doc_watch, meetings
+            from . import anomaly, assignments, decisions, doc_watch, meetings
             meetings.maybe_watch()
             doc_watch.maybe_watch()
+            anomaly.maybe_check()        # cảnh báo bất thường + signpost
+            assignments.maybe_chase()    # đôn đốc việc đã giao
+            decisions.maybe_review()     # đến hạn đo kết quả quyết định
             rows = (db.sb().table("scheduled_tasks").select("*")
                     .eq("enabled", True).execute()).data
             for row in rows:

@@ -225,7 +225,11 @@ Lark Meeting Agent (Anycross) ───┘     → Drive Jenny-BOD-Memory/meetin
 # ĐỢT 1 & ĐỢT 2 — KẾ HOẠCH CHI TIẾT
 
 > Cơ sở lựa chọn: [RESEARCH.md](RESEARCH.md) (khảo sát thị trường trợ lý board, thiết bị ngoài, decision intelligence — 2026-08-12).
-> Trạng thái: **chưa code** — đây là bản kế hoạch để review trước khi bắt tay.
+>
+> **Trạng thái 2026-08-12: đã code + deploy 10.1–10.4, 11.1–11.3.**
+> Còn lại: chạy 4 migration `0008`–`0011` trên Supabase · tạo lịch digest thứ 2 ·
+> `ELEVENLABS_API_KEY` cho bản audio · 11.4 chờ spike · 11.5 còn phần S&OP.
+> Bảng trạng thái chi tiết: [FEATURES.md mục 10](FEATURES.md).
 
 ## Nguyên tắc xuyên suốt (rút từ nghiên cứu)
 

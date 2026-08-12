@@ -490,6 +490,207 @@ async def assignment_notify_assigner(args: dict) -> dict:
         return _err(e)
 
 
+# ---------- Chỉ số hoàn thành cam kết ----------
+
+@tool("assignment_stats",
+      "Tỷ lệ hoàn thành cam kết của các việc BOD giao: % việc đến hạn trong kỳ được đóng "
+      "ĐÚNG HẠN, số việc đang quá hạn. days: số ngày nhìn lại (mặc định 7). Dùng khi viết "
+      "tổng kết cuối ngày, digest đầu tuần, hoặc chuẩn bị họp BOD — đặt con số này lên đầu.",
+      {"days": int})
+async def assignment_stats(args: dict) -> dict:
+    try:
+        from . import assignments
+        s = assignments.followthrough_stats(int(args.get("days") or 7))
+        if not s["total_due"]:
+            return _text(f"Trong {s['period_days']} ngày qua không có việc nào đến hạn. "
+                         f"Hiện có {s['overdue_now']} việc đang quá hạn.")
+        lines = [
+            f"Kỳ {s['period_days']} ngày: {s['total_due']} việc đến hạn.",
+            f"- Đúng hạn: {s['on_time']} · Trễ: {s['late']} · Chưa xong: {s['still_open']}",
+            f"- **Tỷ lệ hoàn thành đúng hạn: {s['rate_pct']}%**",
+            f"- Đang quá hạn lúc này: {s['overdue_now']} việc",
+        ]
+        if s["overdue_titles"]:
+            lines.append("  " + "; ".join(s["overdue_titles"]))
+        return _text("\n".join(lines))
+    except Exception as e:
+        return _err(e)
+
+
+# ---------- Sổ quyết định ----------
+
+@tool("decision_log",
+      "GHI 1 QUYẾT ĐỊNH của BOD vào sổ quyết định, kèm kỳ vọng đo được để sau này đối "
+      "chiếu với thực tế. Dùng khi BOD chốt một việc trong họp hoặc trong chat. "
+      "LUÔN xác nhận với người quyết trước khi ghi. "
+      "type: big_bet (hệ trọng, hiếm) | cross_cutting (định kỳ liên phòng ban, vd S&OP) | "
+      "delegated (thường xuyên, ít rủi ro). reversible: quyết định này đảo ngược được không "
+      "— nếu có thì khuyên quyết nhanh, nếu không thì mới cần brief + pre-mortem đầy đủ. "
+      "metric_*: chỉ số sẽ dùng để đo (vd metric_name='AOV', metric_target='8', "
+      "metric_unit='%', metric_direction='up'). review_at: 'YYYY-MM-DD HH:MM' giờ VN — mốc "
+      "Jenny tự đo lại. review_sql: câu SQL trả về ĐÚNG 1 dòng 1 cột tên `v` (bỏ trống thì "
+      "đến hạn Jenny sẽ hỏi người quyết). confidence: mức tự tin 0-100 của người quyết.",
+      {"title": str, "decider_open_id": str, "decider_name": str, "type": str,
+       "reversible": bool, "context": str, "options": str, "chosen": str,
+       "expected_outcome": str, "metric_name": str, "metric_target": str,
+       "metric_unit": str, "metric_direction": str, "confidence": int,
+       "review_at": str, "review_sql": str, "chat_id": str,
+       "source_kind": str, "source_id": str})
+async def decision_log(args: dict) -> dict:
+    try:
+        from . import decisions
+        metric = None
+        if (args.get("metric_name") or "").strip():
+            metric = {"metric": args["metric_name"],
+                      "target": args.get("metric_target"),
+                      "unit": args.get("metric_unit") or "",
+                      "direction": args.get("metric_direction") or "up"}
+        row = decisions.create(
+            title=args["title"],
+            decider_open_id=args.get("decider_open_id", ""),
+            decider_name=args.get("decider_name", ""),
+            dtype=args.get("type") or "delegated",
+            reversible=args.get("reversible"),
+            context=args.get("context", ""), options=args.get("options", ""),
+            chosen=args.get("chosen", ""),
+            expected_outcome=args.get("expected_outcome", ""),
+            expected_metric=metric,
+            confidence=args.get("confidence"),
+            review_at_vn=args.get("review_at", ""),
+            review_sql=args.get("review_sql", ""),
+            source_kind=args.get("source_kind") or "chat",
+            source_id=args.get("source_id", ""),
+            chat_id=args.get("chat_id", ""))
+        msg = f"Đã ghi quyết định [{row['id'][:8]}] '{row['title']}' vào sổ."
+        if row.get("review_at"):
+            msg += f" Em sẽ tự đo kết quả vào {str(row['review_at'])[:16]}."
+        elif not (args.get("review_at") or "").strip():
+            msg += (" CHƯA có mốc đo kết quả — hãy hỏi người quyết bao giờ nên nhìn lại "
+                    "việc này rồi cập nhật bằng decision_update.")
+        return _text(msg)
+    except Exception as e:
+        return _err(e)
+
+
+@tool("decision_list",
+      "Danh sách quyết định trong sổ (đang mở). decider_open_id: lọc theo người quyết "
+      "(bỏ trống = tất cả). Dùng khi cần nhìn lại 'ta đã quyết gì', chuẩn bị họp, hoặc "
+      "khi ai đó hỏi về một quyết định cũ.",
+      {"decider_open_id": str})
+async def decision_list(args: dict) -> dict:
+    try:
+        from . import decisions
+        rows = decisions.list_open((args.get("decider_open_id") or "").strip() or None)
+        return _text(decisions.fmt(rows))
+    except Exception as e:
+        return _err(e)
+
+
+@tool("decision_update",
+      "Cập nhật 1 quyết định trong sổ theo id (8 ký tự đầu cũng được). Dùng để bổ sung mốc "
+      "đo kết quả (review_at/review_sql), ghi kết quả thực tế (actual_outcome + "
+      "outcome_verdict: dat|khong_dat|mot_phan), hoặc đóng/hủy (status: reviewed|cancelled).",
+      {"decision_id": str, "review_at": str, "review_sql": str, "actual_outcome": str,
+       "outcome_verdict": str, "status": str, "expected_outcome": str, "confidence": int})
+async def decision_update(args: dict) -> dict:
+    try:
+        from . import decisions
+        sid = args["decision_id"].strip()
+        if len(sid) < 32:  # cho phép truyền 8 ký tự đầu
+            rows = db.sb().table("decisions").select("id").execute().data
+            match = [r["id"] for r in rows if r["id"].startswith(sid)]
+            if not match:
+                return _text(f"Không tìm thấy quyết định nào có id bắt đầu bằng '{sid}'.")
+            sid = match[0]
+        patch = {}
+        if (args.get("review_at") or "").strip():
+            patch["review_at"] = _parse_vn(args["review_at"]).isoformat()
+        for k in ("review_sql", "actual_outcome", "outcome_verdict", "status",
+                  "expected_outcome"):
+            if (args.get(k) or "").strip():
+                patch[k] = args[k]
+        if args.get("confidence") is not None:
+            patch["confidence"] = args["confidence"]
+        row = decisions.update(sid, **patch)
+        return _text(f"Đã cập nhật quyết định [{row['id'][:8]}] '{row['title']}'.")
+    except Exception as e:
+        return _err(e)
+
+
+# ---------- Giám sát số liệu (anomaly / signpost) ----------
+
+@tool("monitor_create",
+      "Tạo phép GIÁM SÁT SỐ LIỆU tự động. kind='anomaly': cảnh báo khi số liệu lệch bất "
+      "thường — `sql` phải trả 2 cột d (DATE) và v (số), 1 dòng/ngày, phủ ít nhất 8 tuần "
+      "gần nhất (hệ thống tự so với cùng thứ trong tuần, dùng median+MAD). "
+      "kind='signpost': ngưỡng kích hoạt review kế hoạch — `sql` trả 1 dòng 1 cột v, "
+      "báo khi chạm threshold_value theo direction. "
+      "direction: both|down|up (chỉ báo khi giảm/tăng). check_cron: giờ VN, mặc định "
+      "'0 9,15,21 * * *'. chat_id lấy từ bối cảnh hội thoại. "
+      "LUÔN chạy thử SQL bằng bq_query trước để chắc chắn đúng cột và có dữ liệu.",
+      {"name": str, "sql": str, "metric_label": str, "unit": str, "chat_id": str,
+       "kind": str, "direction": str, "check_cron": str, "threshold_high": str,
+       "threshold_med": str, "threshold_value": str, "cooldown_hours": int, "note": str})
+async def monitor_create(args: dict) -> dict:
+    try:
+        row = {
+            "name": args["name"], "sql": args["sql"],
+            "metric_label": args.get("metric_label") or args["name"],
+            "unit": args.get("unit", ""), "chat_id": args["chat_id"],
+            "kind": args.get("kind") or "anomaly",
+            "direction": args.get("direction") or "both",
+            "check_cron": args.get("check_cron") or "0 9,15,21 * * *",
+            "note": args.get("note", ""), "enabled": True,
+        }
+        for k in ("threshold_high", "threshold_med", "threshold_value"):
+            if (args.get(k) or "").strip():
+                row[k] = float(args[k])
+        if args.get("cooldown_hours"):
+            row["cooldown_hours"] = int(args["cooldown_hours"])
+        res = db.sb().table("monitors").insert(row).execute().data[0]
+        return _text(f"Đã tạo giám sát [{res['id'][:8]}] '{res['name']}' "
+                     f"({res['kind']}, chạy theo cron `{res['check_cron']}` giờ VN). "
+                     "Mức cao sẽ nhắn ngay, mức trung bình gom vào digest.")
+    except Exception as e:
+        return _err(e)
+
+
+@tool("monitor_list", "Liệt kê các phép giám sát số liệu đang có (anomaly + signpost).", {})
+async def monitor_list(args: dict) -> dict:
+    try:
+        rows = db.sb().table("monitors").select("*").order("created_at").execute().data
+        if not rows:
+            return _text("Chưa có phép giám sát nào.")
+        return _text("\n".join(
+            f"- [{r['id'][:8]}] {r['name']} · {r['kind']} · "
+            f"{'BẬT' if r['enabled'] else 'TẮT'} · cron `{r['check_cron']}` · "
+            f"lần cuối kiểm: {str(r.get('last_checked_at'))[:16] or 'chưa'}"
+            for r in rows))
+    except Exception as e:
+        return _err(e)
+
+
+@tool("monitor_delete",
+      "Xóa (hoặc tắt) 1 phép giám sát theo id. disable_only=true để chỉ tạm tắt.",
+      {"monitor_id": str, "disable_only": bool})
+async def monitor_delete(args: dict) -> dict:
+    try:
+        sid = args["monitor_id"].strip()
+        if len(sid) < 32:
+            rows = db.sb().table("monitors").select("id").execute().data
+            match = [r["id"] for r in rows if r["id"].startswith(sid)]
+            if not match:
+                return _text(f"Không tìm thấy giám sát có id bắt đầu bằng '{sid}'.")
+            sid = match[0]
+        if args.get("disable_only"):
+            db.sb().table("monitors").update({"enabled": False}).eq("id", sid).execute()
+            return _text("Đã tắt phép giám sát (giữ lại để bật lại sau).")
+        db.sb().table("monitors").delete().eq("id", sid).execute()
+        return _text("Đã xóa phép giám sát.")
+    except Exception as e:
+        return _err(e)
+
+
 # ---------- NotebookLM (Gemini Notebook) ----------
 
 @tool("notebooklm_ask",
@@ -622,4 +823,7 @@ lark_server = create_sdk_mcp_server(
            assignment_create, assignment_list, assignment_update,
            assignment_remind, assignment_notify_assigner,
            schedule_create, schedule_list, schedule_delete,
+           assignment_stats,
+           decision_log, decision_list, decision_update,
+           monitor_create, monitor_list, monitor_delete,
            memory_save, memory_index, memory_read])

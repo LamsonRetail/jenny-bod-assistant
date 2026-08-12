@@ -42,7 +42,7 @@ def _lark_server():
 # Tool đọc web + BigQuery MCP (read-only). Không Bash/Write/Edit trên server.
 ALLOWED_TOOLS = ["WebSearch", "WebFetch",
                  "mcp__bq__get_data_dictionary", "mcp__bq__bq_query",
-                 "mcp__bq__bq_recent_queries",
+                 "mcp__bq__bq_recent_queries", "mcp__bq__anomaly_recent",
                  "mcp__lark__read_lark_document",
                  "mcp__lark__calendar_list_events", "mcp__lark__calendar_create_event",
                  "mcp__lark__calendar_delete_event",
@@ -60,6 +60,11 @@ ALLOWED_TOOLS = ["WebSearch", "WebFetch",
                  "mcp__lark__assignment_notify_assigner",
                  "mcp__lark__schedule_create", "mcp__lark__schedule_list",
                  "mcp__lark__schedule_delete",
+                 "mcp__lark__assignment_stats",
+                 "mcp__lark__decision_log", "mcp__lark__decision_list",
+                 "mcp__lark__decision_update",
+                 "mcp__lark__monitor_create", "mcp__lark__monitor_list",
+                 "mcp__lark__monitor_delete",
                  "mcp__lark__memory_save", "mcp__lark__memory_index", "mcp__lark__memory_read"]
 DISALLOWED_TOOLS = ["Bash", "Write", "Edit", "NotebookEdit", "Task"]
 

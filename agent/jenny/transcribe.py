@@ -88,3 +88,28 @@ MIME_BY_EXT = {
 def mime_for(filename: str) -> str | None:
     from pathlib import Path
     return MIME_BY_EXT.get(Path(filename.lower()).suffix)
+
+
+def to_wav(data: bytes, src_ext: str = ".opus") -> bytes:
+    """Chuyển audio sang wav 16kHz mono bằng ffmpeg.
+
+    Tin nhắn thoại Lark ở dạng opus — Whisper server nhận wav ổn định hơn.
+    """
+    import os
+    import subprocess
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=src_ext, delete=False) as f:
+        f.write(data)
+        src = f.name
+    dst = src + ".wav"
+    try:
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", src,
+                        "-ar", "16000", "-ac", "1", dst],
+                       check=True, timeout=180)
+        with open(dst, "rb") as f:
+            return f.read()
+    finally:
+        for p in (src, dst):
+            if os.path.exists(p):
+                os.unlink(p)

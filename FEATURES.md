@@ -145,11 +145,48 @@ Kho `.md` trên **Lark Drive** (`Jenny-BOD-Memory/` + thư mục con `meetings/r
 ### 4.13. Nghiên cứu thị trường & web *(theo plan)*
 - Skill `web-research`: `WebSearch` + `WebFetch`, luôn ghi nguồn, nêu số liệu kèm thời điểm, nói rõ độ tin cậy.
 
+### 4.14. Tin nhắn thoại — nói với Jenny thay vì gõ ⭐ *(Đợt 1)*
+- Gửi **voice note** trong Lark → Jenny gỡ băng (Whisper) rồi xử lý y như tin chữ.
+- Jenny **chép lại nội dung nghe được** (`🎤 Em nghe: «…»`) ở đầu câu trả lời để phát hiện ngay nếu nghe sai.
+- **Lọc chi phí**: chat riêng luôn xử lý; trong group chỉ xử lý khi tin nằm trong thread Jenny theo dõi hoặc là reply. Tin thoại dài quá ngưỡng (mặc định 5 phút) được coi là bản ghi họp, chuyển sang pipeline meeting.
+- Config `voice_note`: `enabled`, `max_duration_sec`, `group_requires_reply`, `echo_transcript`.
+
+### 4.15. Cảnh báo bất thường số liệu ⭐ *(Đợt 1)*
+Nguyên tắc: **thống kê phát hiện, LLM chỉ diễn giải** — không để model tự "ngửi" bất thường.
+- Baseline so với **cùng thứ trong tuần** của tối đa 8 tuần gần nhất, dùng **median + MAD** để ngày campaign không kéo lệch.
+- **Sàn nhiễu 5%**: giả định chỉ số luôn dao động tự nhiên ít nhất 5% — chống báo động giả khi chuỗi quá phẳng.
+- **Blackout** ngày campaign/lễ (8/8, 9/9, 11/11, Tết…) và **cooldown** theo từng phép giám sát.
+- **Phân tầng**: mức cao → nhắn ngay · trung bình → gom vào brief/digest · thấp → chỉ ghi log.
+- Diễn giải do agent viết (được phép chạy `bq_query` bóc tách nguyên nhân), kết bằng 1 khuyến nghị.
+- Tools: `monitor_create` / `monitor_list` / `monitor_delete` · `anomaly_recent`.
+
+### 4.16. Tự động đôn đốc việc đã giao ⭐ *(Đợt 1)*
+- Nhắc PIC khi **còn 24h tới hạn**, và khi **quá hạn** (mỗi 24h, tối đa 3 lần).
+- **Gộp mọi việc của cùng một người vào MỘT tin** — không spam nhiều tin rời.
+- Quá ngưỡng → **escalate lên người giao** kèm 3 lựa chọn: gia hạn / đổi người / hủy.
+- Tôn trọng **giờ im lặng** 21:00–07:00.
+- **Tỷ lệ hoàn thành cam kết** (`assignment_stats`): % việc đến hạn được đóng đúng hạn — đưa lên đầu tổng kết cuối ngày và digest đầu tuần.
+- Config `assignment_chase`.
+
+### 4.17. Sổ quyết định & tự đo kết quả ⭐ *(Đợt 2)*
+Vòng lặp không công cụ nào trên thị trường làm đủ:
+- **Ghi quyết định** kèm kỳ vọng **đo được** (metric + mục tiêu), mức tự tin, mốc nhìn lại, và câu SQL để đo (`decision_log`).
+- Phân loại theo **cửa 1 chiều / 2 chiều**: đảo ngược được thì khuyên quyết nhanh; không đảo ngược được mới cần brief + pre-mortem.
+- **Đến hạn Jenny tự chạy lại SQL**, đối chiếu kỳ vọng vs thực tế, viết bài học, lưu vào sổ. Không đo tự động được thì hỏi thẳng người quyết.
+- **Calibration**: tích lũy để so mức tự tin đã khai với tỷ lệ đạt thực tế (bật khi đủ ≥6 tháng dữ liệu).
+- Tools: `decision_log` / `decision_list` / `decision_update`.
+- Skill `decision-support`: mẫu **decision brief 7 phần** (kiểu 6-pager), **pre-mortem**, red-team tự phản biện.
+
+### 4.18. Brief sáng dạng âm thanh ⭐ *(Đợt 2)*
+- Lịch nào được liệt kê trong config `audio_brief.schedule_ids` sẽ có thêm **bản đọc thành tiếng** gửi vào chat.
+- Bản đọc được **viết lại riêng cho tai nghe** (bỏ markdown/bảng, số làm tròn, câu ngắn, 2–3 phút) chứ không TTS thẳng bản chữ.
+- ElevenLabs multilingual; cần `ELEVENLABS_API_KEY`. Chưa có key thì tự tắt, bản chữ vẫn gửi bình thường.
+
 ---
 
 ## 5. Bảng tra cứu công cụ (MCP tools)
 
-**Server `bq`** (`bq_tools.py`): `get_data_dictionary`, `bq_query`, `bq_recent_queries`.
+**Server `bq`** (`bq_tools.py`): `get_data_dictionary`, `bq_query`, `bq_recent_queries`, `anomaly_recent` ⭐.
 
 **Server `lark`** (`lark_tools.py`):
 
@@ -164,6 +201,9 @@ Kho `.md` trên **Lark Drive** (`Jenny-BOD-Memory/` + thư mục con `meetings/r
 | Tài nguyên | `search_resources`, `recent_resources`, `watch_document` |
 | Giao việc BOD | `assignment_create`, `assignment_list`, `assignment_update`, `assignment_remind`, `assignment_notify_assigner` |
 | Lịch định kỳ | `schedule_create`, `schedule_list`, `schedule_delete` |
+| Chỉ số cam kết ⭐ | `assignment_stats` |
+| Sổ quyết định ⭐ | `decision_log`, `decision_list`, `decision_update` |
+| Giám sát số liệu ⭐ | `monitor_create`, `monitor_list`, `monitor_delete` |
 | NotebookLM | `notebooklm_ask`, `notebooklm_add_source`, `notebooklm_audio_overview` |
 | Bộ nhớ | `memory_save`, `memory_index`, `memory_read` |
 
@@ -186,7 +226,10 @@ Tool web (SDK): `WebSearch`, `WebFetch`. **Bị cấm trên VPS**: `Bash`, `Writ
 | `resources` ⭐ | danh bạ link/file/doc share trong chat | 0003 |
 | `people` ⭐ | danh bạ nhân sự sync từ Lark Contacts + ghi chú học | 0004 |
 | `meetings` ⭐ | theo dõi biên bản họp (trạng thái, notes_md, file) | 0005 |
-| `assignments` ⭐ | việc BOD giao (4 yếu tố, trạng thái, kết quả) | 0006 |
+| `assignments` ⭐ | việc BOD giao (4 yếu tố, trạng thái, kết quả) + đếm nhắc/escalate | 0006 / 0009 |
+| `monitors` ⭐ | phép giám sát số liệu (anomaly + signpost) | 0008 |
+| `anomaly_events` ⭐ | lịch sử bất thường đã phát hiện + diễn giải | 0008 |
+| `decisions` ⭐ | sổ quyết định: kỳ vọng đo được → kết quả thực tế | 0010 |
 
 *(RLS bật toàn bộ, không policy → chỉ service key trên VPS truy cập; dashboard dùng auth riêng.)*
 
@@ -198,7 +241,9 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 `persona`, `company_instructions`, `reply_rules` (trigger_names…), `bq_data_dictionary` (project_id + link wiki), `internal_docs`, `drive_memory_folder` / `lark_memory`, `notebooklm`, `transcribe_server`, `lark_admin_ids`, `lark_p2p_partners`, `lark_p2p_map`, `lark_known_threads`, `bod_members`, `meeting_authorized_ids`, `org_sync` / `org_chart_file`, `doc_comment_cursor`, `lark_user_token`.
 
-**Skills đang có**: `web-research` ✅, `bigquery-analytics` ✅, `internal-knowledge` ✅, `memory` (kèm các skill nghiệp vụ bổ sung trên Supabase). Thêm/bật/tắt skill từ dashboard → Jenny nạp lại ở phiên mới.
+Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `tts` ⭐ · `audio_brief` ⭐ (danh sách lịch cần đọc thành tiếng).
+
+**Skills đang có**: `web-research` ✅, `bigquery-analytics` ✅, `internal-knowledge` ✅, `memory`, `decision-support` ⭐, `proactive-monitoring` ⭐ (kèm các skill nghiệp vụ bổ sung trên Supabase). Thêm/bật/tắt skill từ dashboard → Jenny nạp lại ở phiên mới.
 
 ---
 
@@ -232,31 +277,23 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 ---
 
-## 10. Sắp có — Đợt 1 & Đợt 2
+## 10. Trạng thái Đợt 1 & Đợt 2
 
-> Kế hoạch chi tiết (việc cần làm, migration, rủi ro, tiêu chí nghiệm thu): [PLAN.md mục 10–11](PLAN.md).
-> Cơ sở lựa chọn từ khảo sát thị trường: [RESEARCH.md](RESEARCH.md). **Trạng thái: chưa code.**
+> Kế hoạch chi tiết: [PLAN.md mục 10–11](PLAN.md) · Cơ sở lựa chọn: [RESEARCH.md](RESEARCH.md)
 
-### Đợt 1 — Chủ động & thu nhận *(≈ 10–12 ngày công, không mua thiết bị)*
-Mục tiêu: Jenny **chủ động lên tiếng đúng lúc** và **nghe được giọng nói**.
-
-| # | Tính năng | Giá trị |
+| # | Tính năng | Trạng thái |
 |---|---|---|
-| 10.1 | **Voice note**: nói với Jenny trong Lark thay vì gõ | Hợp thói quen lãnh đạo Việt; dùng được khi di chuyển |
-| 10.2 | **Cảnh báo bất thường số liệu** (thống kê phát hiện → LLM diễn giải → đẩy theo tầng độ khẩn) | Biết sớm trước khi phải mở dashboard |
-| 10.3 | **Digest thứ 2 "tuần này có gì thay đổi"** + tỷ lệ hoàn thành cam kết | Một bản tin duy nhất đầu tuần, mỗi mục kèm hàm ý hành động |
-| 10.4 | **Tự động đôn đốc việc đã giao** + escalate lên người giao | Đóng lỗ rò kinh điển: giao xong không ai theo |
+| 10.1 | Voice note trong Lark | ✅ đã code + deploy |
+| 10.2 | Cảnh báo bất thường số liệu | ✅ đã code + deploy · cần chạy migration `0008` |
+| 10.3 | Digest thứ 2 + tỷ lệ hoàn thành cam kết | ✅ tool + skill xong · **cần tạo lịch digest** |
+| 10.4 | Tự động đôn đốc việc đã giao | ✅ đã code + deploy · cần migration `0009` |
+| 11.1 | Sổ quyết định + tự đo kết quả | ✅ đã code + deploy · cần migration `0010` |
+| 11.2 | Decision brief + pre-mortem | ✅ skill `decision-support` · cần migration `0011` |
+| 11.3 | Brief sáng dạng âm thanh | ✅ đã code · **cần `ELEVENLABS_API_KEY`** rồi bật trong `audio_brief` |
+| 11.4 | Thẻ tương tác 1 chạm | ⏸ chờ spike kỹ thuật (Lark có thể chặn card từ user token) |
+| 11.5 | Ngoại lệ S&OP + signpost | 🟡 hạ tầng signpost xong (`monitors.kind='signpost'`) · còn phần S&OP |
 
-### Đợt 2 — Vòng lặp quyết định *(≈ 13–18 ngày công)*
-Mục tiêu: Jenny sở hữu trọn vòng lặp mà **không công cụ nào trên thị trường làm đủ** — ghi quyết định kèm dự đoán → brief có phương án/rủi ro/khuyến nghị → pre-mortem → theo dõi hành động → đến hạn tự đo kết quả → phản hồi calibration.
-
-| # | Tính năng | Giá trị |
-|---|---|---|
-| 11.1 | **Sổ quyết định** (`decisions`) + tự chạy lại số liệu đo kết quả | Con người không duy trì nổi sổ này — AI thì có |
-| 11.2 | **Decision brief** (kiểu 6-pager) + **pre-mortem** | Pre-mortem tăng ~30% khả năng nhận diện nguyên nhân thất bại |
-| 11.3 | **Brief sáng dạng âm thanh** (TTS tiếng Việt) | Nghe trên đường đi làm — cách khả thi duy nhất để "tích hợp xe hơi" |
-| 11.4 | **Thẻ tương tác** Duyệt / Hỏi thêm / Giao việc | Xử lý 1 chạm trên điện thoại *(cần spike kỹ thuật trước)* |
-| 11.5 | **Danh sách ngoại lệ S&OP** + ngưỡng cảnh báo kế hoạch (signpost) | Họp S&OP chỉ bàn ngoại lệ, không đọc lại toàn bộ số liệu |
+**Việc cần làm để chạy đầy đủ**: chạy 4 migration `0008`–`0011` trên Supabase SQL Editor (kèm `NOTIFY pgrst, 'reload schema';`), tạo phép giám sát đầu tiên bằng `monitor_create`, tạo lịch digest thứ 2, và thêm `ELEVENLABS_API_KEY` nếu muốn bản audio.
 
 ### Đợt 3 — Thiết bị *(pilot nhỏ, sau Đợt 1–2)*
 Máy ghi âm **Plaud NotePin** cho họp offline (test chất lượng nghe tiếng Việt trước) · màn hình **e-ink để bàn** · **podcast riêng tư** nghe qua CarPlay · dashboard TV kèm lời bình.
