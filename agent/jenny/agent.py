@@ -15,7 +15,7 @@ from claude_agent_sdk import (
     query,
 )
 
-from . import config, db, lsr_telemetry
+from . import config, db, lsr_telemetry, policy
 
 log = logging.getLogger(__name__)
 
@@ -79,8 +79,9 @@ class AgentReply:
 
 
 def build_system_prompt(chat_title: str | None, is_group: bool,
-                        channel: str = "Telegram") -> str:
-    """Ghép persona + quy tắc (configs) + skills từ Supabase."""
+                        channel: str = "Telegram", *, can_assign: bool = True,
+                        restricted_on: bool = False) -> str:
+    """Ghép persona + quy tắc (configs) + skills + CHÍNH SÁCH theo người hỏi."""
     configs = db.all_configs()
     skills = db.enabled_skills()
 
@@ -116,6 +117,10 @@ def build_system_prompt(chat_title: str | None, is_group: bool,
         for s in skills:
             parts.append(f"\n### {s['name']} — {s['description']}\n{s['content_md']}")
 
+    # Chính sách + tính nhất quán: đặt CUỐI để không bị phần trên ghi đè.
+    parts += ["", policy.audience_rules(can_assign=can_assign,
+                                        restricted_on=restricted_on),
+              policy.consistency_rules()]
     return "\n".join(parts)
 
 
@@ -137,7 +142,8 @@ def build_prompt(history: list[dict], sender_name: str, text: str,
     return "\n".join(parts)
 
 
-async def run(prompt: str, system_prompt: str, conversation_id: str | None = None) -> AgentReply:
+async def run(prompt: str, system_prompt: str, conversation_id: str | None = None,
+              allowed_tools: list[str] | None = None) -> AgentReply:
     reply = AgentReply()
     _t0 = time.monotonic()
     _model: str | None = None
@@ -146,7 +152,7 @@ async def run(prompt: str, system_prompt: str, conversation_id: str | None = Non
         # (cách dùng tool, search, suy luận...), append thêm persona + skills.
         system_prompt={"type": "preset", "preset": "claude_code",
                        "append": system_prompt},
-        allowed_tools=ALLOWED_TOOLS,
+        allowed_tools=allowed_tools if allowed_tools is not None else ALLOWED_TOOLS,
         disallowed_tools=DISALLOWED_TOOLS,
         # KHÔNG dùng bypassPermissions (bị chặn khi chạy root trên VPS);
         # allowed_tools đã tự phê duyệt các tool trong danh sách.

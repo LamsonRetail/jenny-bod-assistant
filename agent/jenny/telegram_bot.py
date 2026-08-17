@@ -14,7 +14,7 @@ from telegram.ext import (
     filters,
 )
 
-from . import agent, config, db
+from . import agent, answer_cache, config, db, policy
 
 log = logging.getLogger(__name__)
 
@@ -85,15 +85,39 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     if is_group and not await _is_mentioned(update, context):
         return
 
-    if not conv["whitelisted"]:
+    # Mở cho toàn công ty (config open_access). Tắt config → quay lại luồng /approve.
+    if not conv["whitelisted"] and not policy.is_open_access():
         await msg.reply_text(
             "Chat này chưa được duyệt sử dụng Jenny.\n"
             f"Chat ID: `{chat.id}` — gửi ID này cho quản trị viên, "
             "hoặc admin gõ /approve tại đây.", parse_mode="Markdown")
         return
 
+    can_assign = policy.is_assignment_admin(
+        "telegram", str(user.id) if user else None, sender)
+
+    # RÀO 1 — chủ đề hạn chế: từ chối TRƯỚC khi gọi LLM (admin được bỏ qua).
+    hit = policy.restricted_topic(msg.text, is_admin=can_assign)
+    if hit:
+        topic, word = hit
+        log.info("chặn chủ đề '%s' (khớp '%s') — người gửi %s", topic, word, sender)
+        text = policy.refusal_message(topic)
+        db.log_message(conv["id"], "out", text)
+        await msg.reply_text(text)
+        return
+
+    # RÀO 2 — nhất quán: câu tương tự đã trả lời thì dùng lại NGUYÊN VĂN.
+    tier = "admin" if can_assign else "user"
+    cached = answer_cache.lookup(msg.text, tier)
+    if cached:
+        db.log_message(conv["id"], "out", cached["answer"])
+        for chunk in _split_message(cached["answer"]):
+            await msg.reply_text(chunk)
+        return
+
     history = db.recent_messages(conv["id"], config.MAX_HISTORY_MESSAGES)[:-1]
-    system_prompt = agent.build_system_prompt(chat.title, is_group)
+    system_prompt = agent.build_system_prompt(chat.title, is_group,
+                                              can_assign=can_assign, restricted_on=not can_assign)
     prompt = agent.build_prompt(history, sender, msg.text)
 
     async def _keep_typing() -> None:
@@ -107,7 +131,9 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     typing_task = asyncio.create_task(_keep_typing())
     try:
-        reply = await agent.run(prompt, system_prompt, conversation_id=conv["id"])
+        reply = await agent.run(
+            prompt, system_prompt, conversation_id=conv["id"],
+            allowed_tools=policy.allowed_tools(agent.ALLOWED_TOOLS, can_assign=can_assign))
     except Exception:
         log.exception("agent.run failed")
         await msg.reply_text("Em gặp lỗi khi xử lý, anh/chị thử lại giúp em nhé.")
@@ -119,6 +145,7 @@ async def on_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
     db.log_message(conv["id"], "out", reply.text, session_id=reply.session_id,
                    tokens_input=usage.get("input_tokens"),
                    tokens_output=usage.get("output_tokens"))
+    answer_cache.store(msg.text, tier, reply.text)
     for chunk in _split_message(reply.text):
         await msg.reply_text(chunk)
 

@@ -17,7 +17,7 @@ from lark_oapi.api.im.v1 import (
     P2ImMessageReceiveV1,
 )
 
-from . import agent, config, db
+from . import agent, answer_cache, config, db, policy
 
 log = logging.getLogger(__name__)
 
@@ -118,19 +118,52 @@ async def _handle(data: P2ImMessageReceiveV1) -> None:
             and not any(n in text.lower() for n in _bot_names):
         return
 
-    if not conv["whitelisted"]:
+    # Mở cho toàn công ty (config open_access). Tắt config → quay lại luồng /approve.
+    if not conv["whitelisted"] and not policy.is_open_access():
         _send_text(chat_id,
                    "Chat này chưa được duyệt sử dụng Jenny.\n"
                    f"Chat ID: {chat_id} — gửi ID này cho quản trị viên, "
                    "hoặc admin gõ /approve tại đây.")
         return
 
+    sender_name = None
+    try:
+        from . import org
+        p = org.get_person(sender_id) if sender_id else None
+        sender_name = (p or {}).get("name")
+    except Exception:
+        pass
+    can_assign = policy.is_assignment_admin("lark", sender_id, sender_name)
+
+    # RÀO 1 — chủ đề hạn chế: từ chối TRƯỚC khi gọi LLM (admin được bỏ qua).
+    hit = policy.restricted_topic(text, is_admin=can_assign)
+    if hit:
+        topic, word = hit
+        log.info("chặn chủ đề '%s' (khớp '%s') — người gửi %s", topic, word,
+                 sender_name or sender_id)
+        msg_out = policy.refusal_message(topic)
+        db.log_message(conv["id"], "out", msg_out)
+        _send_text(chat_id, msg_out)
+        return
+
+    # RÀO 2 — nhất quán: câu tương tự đã trả lời thì dùng lại NGUYÊN VĂN.
+    tier = "admin" if can_assign else "user"
+    cached = answer_cache.lookup(text, tier)
+    if cached:
+        db.log_message(conv["id"], "out", cached["answer"])
+        _send_text(chat_id, cached["answer"])
+        return
+
     history = db.recent_messages(conv["id"], config.MAX_HISTORY_MESSAGES)[:-1]
-    system_prompt = agent.build_system_prompt(None, is_group, channel="Lark")
-    prompt = agent.build_prompt(history, sender_id or "Người dùng", text)
+    system_prompt = agent.build_system_prompt(None, is_group, channel="Lark",
+                                             can_assign=can_assign,
+                                             restricted_on=not can_assign)
+    prompt = agent.build_prompt(history, sender_name or sender_id or "Người dùng", text)
 
     try:
-        reply = await agent.run(prompt, system_prompt, conversation_id=conv["id"])
+        reply = await agent.run(
+            prompt, system_prompt, conversation_id=conv["id"],
+            allowed_tools=policy.allowed_tools(agent.ALLOWED_TOOLS, can_assign=can_assign))
     except Exception:
         log.exception("agent.run failed")
         _send_text(chat_id, "Em gặp lỗi khi xử lý, anh/chị thử lại giúp em nhé.")
@@ -140,6 +173,7 @@ async def _handle(data: P2ImMessageReceiveV1) -> None:
     db.log_message(conv["id"], "out", reply.text, session_id=reply.session_id,
                    tokens_input=usage.get("input_tokens"),
                    tokens_output=usage.get("output_tokens"))
+    answer_cache.store(text, tier, reply.text)
     _send_text(chat_id, reply.text)
 
 
