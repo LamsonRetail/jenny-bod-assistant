@@ -10,7 +10,7 @@ import json
 import logging
 import time
 
-from . import agent, config, db, lark_user
+from . import agent, answer_cache, config, db, lark_user, policy
 
 log = logging.getLogger(__name__)
 
@@ -252,9 +252,29 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     if is_group and not (is_voice and in_thread) \
             and not _mentioned_me(msg, my_open_id, text):
         return
-    if not conv["whitelisted"]:
+    # Mở cho toàn công ty (config open_access); tắt config → quay lại luồng /approve.
+    if not conv["whitelisted"] and not policy.is_open_access():
         _say("Chat này chưa được duyệt sử dụng Jenny.\n"
              f"Chat ID: {chat_id} — admin gõ /approve tại đây để duyệt.")
+        return
+
+    can_assign = policy.is_assignment_admin("lark", sender_id)
+
+    # RÀO 1 — chủ đề hạn chế: từ chối TRƯỚC khi gọi LLM (BOD/CEO/GDKD bỏ qua).
+    _hit = policy.restricted_topic(text, is_admin=can_assign)
+    if _hit:
+        log.info("chặn chủ đề '%s' (khớp '%s') — người gửi %s", _hit[0], _hit[1], sender_id)
+        _msg = policy.refusal_message(_hit[0])
+        db.log_message(conv["id"], "out", _msg)
+        _say(_msg)
+        return
+
+    # RÀO 2 — nhất quán: câu tương tự đã trả lời thì dùng lại NGUYÊN VĂN.
+    tier = "admin" if can_assign else "user"
+    _cached = answer_cache.lookup(text, tier)
+    if _cached:
+        db.log_message(conv["id"], "out", _cached["answer"])
+        _say(_cached["answer"])
         return
 
     # "Typing indicator": gửi placeholder ngay, xong thì edit thành câu trả lời
@@ -303,10 +323,14 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
                            "kỳ vào đúng thread này).")
 
     history = db.recent_messages(conv["id"], config.MAX_HISTORY_MESSAGES)[:-1]
-    system_prompt = agent.build_system_prompt(chat.get("name"), is_group, channel="Lark")
+    system_prompt = agent.build_system_prompt(chat.get("name"), is_group, channel="Lark",
+                                              can_assign=can_assign,
+                                              restricted_on=not can_assign)
     prompt = agent.build_prompt(history, sender_name, text, sender_context=sender_context)
     try:
-        reply = await agent.run(prompt, system_prompt, conversation_id=conv["id"])
+        reply = await agent.run(
+            prompt, system_prompt, conversation_id=conv["id"],
+            allowed_tools=policy.allowed_tools(agent.ALLOWED_TOOLS, can_assign=can_assign))
     except Exception:
         log.exception("agent.run failed")
         err = "Em gặp lỗi khi xử lý, anh/chị thử lại giúp em nhé."
@@ -323,6 +347,7 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     db.log_message(conv["id"], "out", reply.text, session_id=reply.session_id,
                    tokens_input=usage.get("input_tokens"),
                    tokens_output=usage.get("output_tokens"))
+    answer_cache.store(text, tier, reply.text)
     # Tin thoại: chép lại nội dung nghe được để người nói phát hiện ngay nếu nghe sai
     display = reply.text
     if is_voice and _voice_cfg()["echo_transcript"]:
