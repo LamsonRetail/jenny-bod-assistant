@@ -19,6 +19,11 @@ echo "→ Cài dependencies + service"
 $SSH "$VPS" bash -s <<'REMOTE'
 set -euo pipefail
 mkdir -p /opt/jenny/workdir /opt/jenny/logs
+
+# Telemetry LSR: Jenny gửi TRỰC TIẾP trong jenny/lsr_telemetry.py (đi cùng mọi lần
+# deploy). Xoá hook Claude Code cũ sót lại từ bản deploy 07/08 — rsync có --exclude
+# nên chúng không bị dọn, để lại sẽ ĐẾM ĐÔI mỗi lượt trả lời.
+rm -rf /opt/jenny/app/.claude /opt/jenny/app/.lsr /opt/jenny/app/.env.lsr
 [ -d /opt/jenny/venv ] || python3 -m venv /opt/jenny/venv
 /opt/jenny/venv/bin/pip install -q -r /opt/jenny/app/requirements.txt
 cp /opt/jenny/app/jenny.service /etc/systemd/system/jenny.service

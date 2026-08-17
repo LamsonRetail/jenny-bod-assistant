@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -14,7 +15,7 @@ from claude_agent_sdk import (
     query,
 )
 
-from . import config, db
+from . import config, db, lsr_telemetry
 
 log = logging.getLogger(__name__)
 
@@ -138,6 +139,8 @@ def build_prompt(history: list[dict], sender_name: str, text: str,
 
 async def run(prompt: str, system_prompt: str, conversation_id: str | None = None) -> AgentReply:
     reply = AgentReply()
+    _t0 = time.monotonic()
+    _model: str | None = None
     options = ClaudeAgentOptions(
         # Preset "claude_code": giữ TOÀN BỘ instructions gốc của Claude
         # (cách dùng tool, search, suy luận...), append thêm persona + skills.
@@ -170,11 +173,23 @@ async def run(prompt: str, system_prompt: str, conversation_id: str | None = Non
         elif isinstance(message, ResultMessage):
             reply.session_id = message.session_id
             reply.usage = message.usage or {}
+            _model = getattr(message, "model", None)
             if not message.is_error and message.result:
                 reply.text = message.result
-            db.log_token_usage(message.session_id, getattr(message, "model", None),
-                               reply.usage)
+            db.log_token_usage(message.session_id, _model, reply.usage)
 
     if not reply.text:
         reply.text = "\n".join(last_text).strip() or "(Em chưa tạo được câu trả lời, anh/chị thử lại giúp em.)"
+
+    # Báo cáo về LSR platform (token/run/tool). Chạy nền, bọc kín: telemetry hỏng
+    # thì Jenny vẫn trả lời như thường.
+    try:
+        lsr_telemetry.send(
+            run_id=reply.session_id, task_id=conversation_id,
+            usage=reply.usage, model=_model, tool_calls=reply.tool_calls,
+            final_output=reply.text,
+            duration_ms=int((time.monotonic() - _t0) * 1000),
+        )
+    except Exception:
+        log.warning("không gửi được telemetry LSR", exc_info=True)
     return reply
