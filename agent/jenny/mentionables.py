@@ -43,12 +43,47 @@ def _mention_id(men: dict) -> str:
     return mid or ""
 
 
+_classified: dict[str, bool] = {}      # open_id → is_bot (cache trong tiến trình)
+
+
+def classify_bots(open_ids: list[str]) -> dict[str, bool]:
+    """open_id → có phải BOT không.
+
+    Không thể chỉ dựa vào bảng `people`: org sync từ Contacts có thể chưa phủ hết nhân
+    sự, người thật bị thiếu sẽ bị gắn nhãn bot oan. Nên với các id lạ phải hỏi thẳng
+    Contact API — có trong danh bạ = người, không có = bot app.
+    """
+    from . import lark_user
+
+    humans = _humans()
+    out: dict[str, bool] = {}
+    unknown = []
+    for oid in open_ids:
+        if oid in humans:
+            out[oid] = False
+        elif oid in _classified:
+            out[oid] = _classified[oid]
+        else:
+            unknown.append(oid)
+    if unknown:
+        real = lark_user.users_batch_get(unknown)
+        for oid in unknown:
+            is_bot = oid not in real
+            _classified[oid] = is_bot
+            out[oid] = is_bot
+    return out
+
+
 def save_seen(chat_id: str, mentions: list | None) -> int:
     """Ghi nhận những ai được tag trong 1 tin nhắn. Trả về số dòng mới/cập nhật."""
     if not chat_id or not mentions:
         return 0
     chat_id = chat_id.split("#", 1)[0]
-    humans = _humans()
+    ids = [_mention_id(m) for m in mentions]
+    ids = [i for i in ids if i.startswith("ou_")]
+    if not ids:
+        return 0
+    is_bot = classify_bots(ids)
     rows = []
     for men in mentions:
         oid = _mention_id(men)
@@ -57,7 +92,7 @@ def save_seen(chat_id: str, mentions: list | None) -> int:
         rows.append({
             "chat_id": chat_id, "open_id": oid,
             "name": (men.get("name") or "")[:200],
-            "is_bot": oid not in humans,
+            "is_bot": is_bot.get(oid, False),
             "last_seen_at": dt.datetime.now(dt.timezone.utc).isoformat(),
         })
     if not rows:
@@ -101,9 +136,9 @@ def discover(chat_id: str, days: int = 180, max_pages: int = 30) -> dict:
         if not data.get("has_more"):
             break
 
-    humans = _humans()
     saved = save_seen(chat_id, [{"id": o, "name": n} for o, n in seen.items()])
-    bots = {o: n for o, n in seen.items() if o not in humans}
+    is_bot = classify_bots(list(seen))
+    bots = {o: n for o, n in seen.items() if is_bot.get(o)}
     log.info("Chat %s: đọc %d tin, học %d đối tượng tag được (%d bot)",
              chat_id, msgs, len(seen), len(bots))
     return {"messages": msgs, "total": len(seen), "bots": bots, "saved": saved}

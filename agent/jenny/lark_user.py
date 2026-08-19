@@ -478,6 +478,30 @@ def list_all_departments() -> list[dict]:
             return items
 
 
+def users_batch_get(open_ids: list[str]) -> set[str]:
+    """Những open_id nào là NGƯỜI THẬT (có trong Contacts).
+
+    Dùng để phân biệt người vs bot app: bot app cũng có open_id dạng `ou_…` nhưng
+    KHÔNG tồn tại trong danh bạ nhân sự.
+    """
+    found: set[str] = set()
+    ids = [i for i in open_ids if i]
+    for i in range(0, len(ids), 50):          # API giới hạn 50 id/lần
+        chunk = ids[i:i + 50]
+        try:
+            r = _http.get(f"{BASE}/contact/v3/users/batch",
+                          params=[("user_ids", c) for c in chunk]
+                                 + [("user_id_type", "open_id")],
+                          headers={"Authorization": f"Bearer {access_token()}"},
+                          timeout=30).json()
+            for u in (r.get("data", {}) or {}).get("items", []) or []:
+                if u.get("open_id"):
+                    found.add(u["open_id"])
+        except Exception as e:
+            log.warning("Kiểm tra danh bạ theo lô lỗi: %s", e)
+    return found
+
+
 def users_in_department(open_department_id: str) -> list[dict]:
     items, page_token = [], ""
     while True:
