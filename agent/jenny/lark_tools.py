@@ -168,6 +168,54 @@ async def task_complete(args: dict) -> dict:
 
 # ---------- Gửi tin nhắn ----------
 
+def _agent_flags() -> tuple[set, list]:
+    """config `known_agents`: open_ids + name_patterns để nhận ra tài khoản agent."""
+    cfg = db.all_configs().get("known_agents", {}) or {}
+    return (set(cfg.get("open_ids") or []),
+            [str(p).lower() for p in (cfg.get("name_patterns") or [])])
+
+
+@tool("group_members",
+      "Liệt kê THÀNH VIÊN trong group Lark kèm open_id để TAG, và đánh dấu ai là AGENT. "
+      "keyword: lọc theo tên (bỏ trống = liệt kê, tối đa 60 dòng). chat_id lấy từ bối cảnh "
+      "hội thoại. Dùng khi cần tag đích danh ai đó mà chưa biết open_id: gọi tool này tra "
+      "tên → lấy open_id → chèn `<at user_id=\"ou_xxx\"></at>` vào câu trả lời. "
+      "GIỚI HẠN QUAN TRỌNG: Lark KHÔNG cho liệt kê bot/app trong group (API chỉ nhận "
+      "user_id/union_id/open_id, endpoint bot không tồn tại). Vì vậy danh sách chỉ có người "
+      "thật và các agent chạy bằng TÀI KHOẢN NGƯỜI DÙNG (như chính Jenny). Nếu ai nhờ tag "
+      "một bot/agent không có trong danh sách, phải nói thẳng là Lark không cho phép tag "
+      "bot qua API — muốn tag được thì agent đó phải vào group bằng tài khoản người dùng.",
+      {"chat_id": str, "keyword": str})
+async def group_members(args: dict) -> dict:
+    try:
+        from . import lark_user
+        chat_id = (args.get("chat_id") or "").split("#", 1)[0].strip()
+        if not chat_id:
+            return _text("Thiếu chat_id.")
+        kw = (args.get("keyword") or "").strip()
+        rows = lark_user.find_members_by_name(chat_id, kw)
+        if not rows:
+            return _text(f"Không thấy thành viên nào khớp '{kw}' trong group này.")
+        agent_ids, agent_pats = _agent_flags()
+        lines, agents = [], []
+        for m in rows[:60]:
+            is_agent = m["open_id"] in agent_ids or any(
+                p in m["name"].lower() for p in agent_pats)
+            tag = " 🤖 AGENT" if is_agent else ""
+            lines.append(f"- {m['name']}{tag}\n  open_id: {m['open_id']}")
+            if is_agent:
+                agents.append(m["name"])
+        head = f"{len(rows)} thành viên khớp"
+        if len(rows) > 60:
+            head += " (hiện 60 đầu)"
+        if agents:
+            head += f" · agent trong group: {', '.join(agents)}"
+        return _text(head + ":\n" + "\n".join(lines)
+                     + "\n\nTag bằng cách chèn <at user_id=\"ou_xxx\"></at> vào câu trả lời.")
+    except Exception as e:
+        return _err(e)
+
+
 @tool("send_lark_message",
       "Gửi tin nhắn đến 1 chat Lark khác (group/người) theo chat_id. CHỈ gửi được vào chat "
       "đã whitelist. Dùng khi cần chuyển tiếp/báo cáo sang chat khác — trong hội thoại "
@@ -826,7 +874,7 @@ lark_server = create_sdk_mcp_server(
            send_lark_message,
            meeting_list_pending, meeting_save_draft, meeting_finalize,
            org_lookup, person_note_save,
-           search_resources, recent_resources, watch_document,
+           search_resources, recent_resources, watch_document, group_members,
            notebooklm_ask, notebooklm_add_source, notebooklm_audio_overview,
            assignment_create, assignment_list, assignment_update,
            assignment_remind, assignment_notify_assigner,

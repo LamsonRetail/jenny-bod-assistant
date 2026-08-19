@@ -248,6 +248,51 @@ def recall_message(message_id: str) -> None:
     _delete(f"/im/v1/messages/{message_id}")
 
 
+_members_cache: dict[str, tuple[float, list[dict]]] = {}
+MEMBERS_TTL = 600          # giây — group lớn (400+ người) nên không gọi lại liên tục
+
+
+def list_chat_members(chat_id: str, max_pages: int = 10,
+                      use_cache: bool = True) -> list[dict]:
+    """Thành viên group → [{open_id, name}].
+
+    GIỚI HẠN CỦA LARK: `member_id_type` chỉ nhận user_id/union_id/open_id — KHÔNG có
+    app_id, và endpoint `/members/bot` không tồn tại (404). Nghĩa là API không liệt kê
+    được **bot app** trong group. Danh sách này chỉ gồm người thật và những agent chạy
+    bằng TÀI KHOẢN NGƯỜI DÙNG (cách chính Jenny đang chạy).
+    """
+    import time as _t
+
+    if use_cache:
+        hit = _members_cache.get(chat_id)
+        if hit and _t.time() - hit[0] < MEMBERS_TTL:
+            return hit[1]
+    out: list[dict] = []
+    token = ""
+    for _ in range(max_pages):
+        params: dict = {"member_id_type": "open_id", "page_size": 100}
+        if token:
+            params["page_token"] = token
+        data = _get(f"/im/v1/chats/{chat_id}/members", params)
+        out += [{"open_id": i.get("member_id"), "name": i.get("name") or ""}
+                for i in data.get("items", []) if i.get("member_id")]
+        token = data.get("page_token") or ""
+        if not data.get("has_more"):
+            break
+    _members_cache[chat_id] = (_t.time(), out)
+    return out
+
+
+def find_members_by_name(chat_id: str, keyword: str) -> list[dict]:
+    """Tìm thành viên group theo tên (không phân biệt hoa thường, khớp một phần)."""
+    members = list_chat_members(chat_id)
+    kw = (keyword or "").strip().lower()
+    if not kw:
+        return members
+    exact = [m for m in members if m["name"].lower() == kw]
+    return exact or [m for m in members if kw in m["name"].lower()]
+
+
 def update_text(message_id: str, text: str) -> None:
     """Sửa nội dung 1 tin nhắn text đã gửi (dùng cho placeholder '⏳ đang xử lý')."""
     r = _http.put(f"{BASE}/im/v1/messages/{message_id}",

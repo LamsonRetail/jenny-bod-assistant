@@ -74,7 +74,9 @@ Trợ lý AI cho Ban điều hành (BOD) công ty **LSR (Lamson Retail)**. Jenny
   - **Group**: chỉ trả lời khi được **@mention** hoặc gọi tên trigger.
   - **Chat riêng (p2p)**: người trong config `lark_p2p_partners` được whitelist tự động; Jenny chủ động nhắn chào để mở chat.
   - **Thread (topic reply)**: Jenny **đọc và trả lời ngay trong thread** — tag Jenny trong 1 thread thì trả lời đúng luồng đó. Danh sách thread đang theo dõi được **lưu bền qua Supabase** (`lark_known_threads`), restart không mất dấu.
-  - **Tag người hỏi trong group** ⭐: câu trả lời tự động `@mention` người vừa hỏi để họ nhận thông báo (chat riêng thì không tag). Jenny cũng tự tag đích danh người khác khi cần họ hành động (markup `<at user_id="ou_…">`, tra open_id bằng `org_lookup`) — quy tắc nằm ở config `reply_rules`.
+  - **Tag người hỏi trong group** ⭐: câu trả lời tự động `@mention` người vừa hỏi để họ nhận thông báo (chat riêng thì không tag).
+  - **Tag theo tên** ⭐: tool `group_members(chat_id, keyword)` liệt kê thành viên group kèm `open_id` và **đánh dấu 🤖 tài khoản agent** (config `known_agents`); Jenny tra tên → chèn `<at user_id="ou_…">` vào câu trả lời. Dùng khi cần đích danh ai hành động.
+    **Giới hạn của Lark**: API thành viên chỉ nhận `user_id/union_id/open_id` — **không có `app_id`**, và endpoint `/members/bot` trả 404. Nên **không thể liệt kê hay tag bot/app** trong group. Chỉ tag được người thật và agent chạy bằng **tài khoản người dùng** (đúng cách Jenny đang chạy). Jenny được dạy nói thẳng giới hạn này thay vì viết tag giả.
   - **Tin chờ "⏳ Em đang xử lý…"**: gửi khi bắt đầu xử lý, **thu hồi (recall) rồi gửi câu trả lời mới** khi xong — phải gửi tin mới chứ không sửa tin cũ, vì tin đã sửa không tạo được thông báo tag. **Hỏi liên tục** trong khoảng cooldown (mặc định 180s) thì bỏ tin chờ để không rác chat. Config `placeholder`.
   - **Chống lặp tuyệt đối**: mỗi `message_id` chỉ xử lý 1 lần (dedup có giới hạn bộ nhớ), cursor luôn tiến — tránh trả lời trùng.
 - **Ngữ cảnh người hỏi**: mỗi tin nhắn Jenny tự đính kèm hồ sơ người gửi (chức danh, phòng ban, ghi chú đã học), cờ **thành viên BOD**, và **các việc đang được giao** cho người đó → điều chỉnh câu trả lời theo vai trò.
@@ -200,6 +202,7 @@ Vòng lặp không công cụ nào trên thị trường làm đủ:
 | Họp | `meeting_list_pending`, `meeting_save_draft`, `meeting_finalize` |
 | Tổ chức | `org_lookup`, `person_note_save` |
 | Tài nguyên | `search_resources`, `recent_resources`, `watch_document` |
+| Thành viên group ⭐ | `group_members` (liệt kê + open_id để tag, đánh dấu agent) |
 | Giao việc BOD | `assignment_create`, `assignment_list`, `assignment_update`, `assignment_remind`, `assignment_notify_assigner` |
 | Lịch định kỳ | `schedule_create`, `schedule_list`, `schedule_delete` |
 | Chỉ số cam kết ⭐ | `assignment_stats` |
@@ -242,7 +245,7 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 `persona`, `company_instructions`, `reply_rules` (trigger_names…), `bq_data_dictionary` (project_id + link wiki), `internal_docs`, `drive_memory_folder` / `lark_memory`, `notebooklm`, `transcribe_server`, `lark_admin_ids`, `lark_p2p_partners`, `lark_p2p_map`, `lark_known_threads`, `bod_members`, `meeting_authorized_ids`, `org_sync` / `org_chart_file`, `doc_comment_cursor`, `lark_user_token`.
 
-Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `placeholder` ⭐ (tin chờ + cooldown).
+Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `placeholder` ⭐ (tin chờ + cooldown) · `known_agents` ⭐ (đánh dấu tài khoản agent).
 
 **Skills đang có**: `web-research` ✅, `bigquery-analytics` ✅, `internal-knowledge` ✅, `memory`, `decision-support` ⭐, `proactive-monitoring` ⭐ (kèm các skill nghiệp vụ bổ sung trên Supabase). Thêm/bật/tắt skill từ dashboard → Jenny nạp lại ở phiên mới.
 
