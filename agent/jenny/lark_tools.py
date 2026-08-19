@@ -255,6 +255,47 @@ async def send_lark_message(args: dict) -> dict:
         return _err(e)
 
 
+# ---------- Hỏi agent khác (agent-to-agent) ----------
+
+@tool("ask_agent",
+      "HỎI MỘT AGENT KHÁC rồi chờ nó trả lời (qua chat Lark). Dùng khi việc đó do agent "
+      "khác phụ trách — quan trọng nhất: **biên bản họp / meeting notes do agent MINO "
+      "làm**, Jenny KHÔNG tự gỡ băng nữa. agent: tên agent (vd 'mino'). question: câu hỏi "
+      "đầy đủ, tự đủ ngữ cảnh (nêu rõ cuộc họp nào, ngày nào, cần phần gì — người kia "
+      "không thấy hội thoại của mình). wait_sec: chờ tối đa (mặc định 120). "
+      "Tool CHỜ ĐỒNG BỘ nên chỉ gọi 1 lần cho mỗi việc; nếu timeout thì báo người dùng là "
+      "agent kia chưa phản hồi, ĐỪNG tự bịa nội dung biên bản.",
+      {"agent": str, "question": str, "wait_sec": int})
+async def ask_agent(args: dict) -> dict:
+    try:
+        from . import peers
+        res = peers.ask(args["agent"], args["question"], args.get("wait_sec"))
+        if res["status"] == "answered":
+            return _text(f"[{res['agent']} trả lời sau {res['waited_sec']}s]\n\n"
+                          f"{res['answer'][:MAX_CHARS]}")
+        if res["status"] == "timeout":
+            return _text(f"⏳ {res['note']}")
+        return _text(f"Lỗi: {res.get('error')}")
+    except Exception as e:
+        return _err(e)
+
+
+@tool("peer_agents_list",
+      "Liệt kê các agent khác mà Jenny có thể hỏi (tên, việc phụ trách, chat).", {})
+async def peer_agents_list(args: dict) -> dict:
+    try:
+        from . import peers
+        reg = peers.registry()
+        if not reg:
+            return _text("Chưa khai agent nào trong config `peer_agents`.")
+        return _text("\n".join(
+            f"- **{k}** — phụ trách: {v.get('role') or '?'} · chat: {v.get('chat_id')}"
+            + (f" · open_id: {v['open_id']}" if v.get("open_id") else " · (chưa có open_id để tag)")
+            for k, v in reg.items()))
+    except Exception as e:
+        return _err(e)
+
+
 # ---------- Meeting notes ----------
 
 @tool("meeting_list_pending",
@@ -890,6 +931,7 @@ lark_server = create_sdk_mcp_server(
            task_create, task_list, task_complete,
            send_lark_message,
            meeting_list_pending, meeting_save_draft, meeting_finalize,
+           ask_agent, peer_agents_list,
            org_lookup, person_note_save,
            search_resources, recent_resources, watch_document, group_members,
            notebooklm_ask, notebooklm_add_source, notebooklm_audio_overview,

@@ -108,7 +108,19 @@ Luồng giao việc chuẩn hóa, **chỉ thành viên BOD** mới giao được
 - **`assignment_update`**: cập nhật trạng thái; khi `done` bắt buộc kèm **bản tổng hợp cho BOD** và tự complete Lark task.
 - **`assignment_remind`** / **`assignment_notify_assigner`**: đôn đốc PIC / báo cáo & escalate lên người giao.
 
-### 4.6. Biên bản họp tự động — Meeting Notes ⭐ *(ngoài plan)*
+### 4.6. Biên bản họp — **đã giao cho agent Mino** ⭐ *(đổi 2026-08-19)*
+Jenny **không tự gỡ băng nữa**. Biên bản họp do agent **Mino** phụ trách; Jenny đi hỏi qua `ask_agent`.
+
+- **Chế độ** ở config `meeting_notes.mode`: `delegate` (mặc định — Mino làm) hoặc `self` (Jenny tự chạy pipeline cũ).
+- Ở chế độ `delegate`, cả **3 cửa vào** pipeline gỡ băng đều bị chặn: quét lịch xin bản ghi (`meetings.maybe_watch`), file audio gửi trong chat (`_maybe_meeting_recording`), và event bản ghi VC (`events._handle_recording`, `_handle_meeting_ended`).
+- **Jenny vẫn làm**: auto-RSVP lời mời họp · xem/đặt/hủy lịch · từ action item Mino trả về thì tạo Lark task hoặc việc BOD giao và theo dõi · ghi quyết định trong họp vào sổ `decision_log`.
+- Ai gửi file ghi âm cho Jenny sẽ được hướng dẫn gửi cho Mino. Mino không trả lời thì Jenny nói thẳng, **không bịa nội dung biên bản**.
+- Skill `meeting-notes` đã viết lại theo hướng này.
+
+**Giao tiếp agent-với-agent** ⭐: tool `ask_agent(agent, question, wait_sec)` gửi câu hỏi vào chat của agent kia (tag nếu có `open_id`) rồi **chờ đồng bộ** tin trả lời đầu tiên không phải của Jenny; timeout thì báo rõ. Danh bạ ở config `peer_agents` (tên → chat_id, open_id, việc phụ trách, thời gian chờ) — thêm agent mới không cần deploy. Xem danh bạ bằng `peer_agents_list`.
+
+<details><summary>Pipeline tự gỡ băng cũ (vẫn còn code, chỉ bật khi <code>mode = self</code>)</summary>
+
 Pipeline đầy đủ (`meetings.py` + `events.py` + `transcribe.py` + `minutes_web.py`):
 1. **Theo dõi lịch Jenny**, tự **RSVP** lời mời họp theo danh sách được phép (`meeting_authorized_ids`) — **chỉ xử lý cuộc họp có mời Jenny**.
 2. Nhận **bản ghi**: qua event VC (`jenny-events`), file audio gửi trong chat, hoặc link Lark Minutes.
@@ -117,6 +129,8 @@ Pipeline đầy đủ (`meetings.py` + `events.py` + `transcribe.py` + `minutes_
 5. **`meeting_finalize`**: lưu kho bộ nhớ, gửi notes cho toàn bộ người dự, ghi nhận số task đã tạo từ action item.
 - **`meeting_list_pending`**: các cuộc họp đang chờ nội dung/duyệt.
 - Ngoài ra `jenny-web` nhận **meeting notes từ ngoài** (Circleback / Lark Meeting Agent) qua webhook → chuẩn hóa `.md` vào kho.
+
+</details>
 
 ### 4.7. Danh bạ tổ chức — Org Directory ⭐ *(ngoài plan)*
 - Đồng bộ từ **Lark Contacts** hằng ngày → bảng `people` + sinh **sơ đồ tổ chức `.md`** trong kho bộ nhớ.
@@ -200,7 +214,8 @@ Vòng lặp không công cụ nào trên thị trường làm đủ:
 | Lịch | `calendar_list_events`, `calendar_create_event`, `calendar_delete_event` |
 | Task | `task_create`, `task_list`, `task_complete` |
 | Tin nhắn | `send_lark_message` |
-| Họp | `meeting_list_pending`, `meeting_save_draft`, `meeting_finalize` |
+| Họp | `meeting_list_pending`, `meeting_save_draft`, `meeting_finalize` *(chỉ dùng ở chế độ `self`)* |
+| Agent khác ⭐ | `ask_agent`, `peer_agents_list` |
 | Tổ chức | `org_lookup`, `person_note_save` |
 | Tài nguyên | `search_resources`, `recent_resources`, `watch_document` |
 | Thành viên group ⭐ | `group_members` (liệt kê + open_id để tag, đánh dấu agent) |
@@ -247,7 +262,7 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 `persona`, `company_instructions`, `reply_rules` (trigger_names…), `bq_data_dictionary` (project_id + link wiki), `internal_docs`, `drive_memory_folder` / `lark_memory`, `notebooklm`, `transcribe_server`, `lark_admin_ids`, `lark_p2p_partners`, `lark_p2p_map`, `lark_known_threads`, `bod_members`, `meeting_authorized_ids`, `org_sync` / `org_chart_file`, `doc_comment_cursor`, `lark_user_token`.
 
-Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `placeholder` ⭐ (tin chờ + cooldown) · `known_agents` ⭐ (đánh dấu tài khoản agent).
+Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `placeholder` ⭐ (tin chờ + cooldown) · `known_agents` ⭐ (đánh dấu tài khoản agent) · `peer_agents` ⭐ (danh bạ agent để hỏi) · `meeting_notes` ⭐ (delegate/self).
 
 **Skills đang có**: `web-research` ✅, `bigquery-analytics` ✅, `internal-knowledge` ✅, `memory`, `decision-support` ⭐, `proactive-monitoring` ⭐ (kèm các skill nghiệp vụ bổ sung trên Supabase). Thêm/bật/tắt skill từ dashboard → Jenny nạp lại ở phiên mới.
 

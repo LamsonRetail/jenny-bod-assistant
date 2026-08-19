@@ -189,6 +189,9 @@ def _maybe_meeting_recording(msg: dict, text: str, sender_id: str) -> bool:
 
     from . import meetings, transcribe
 
+    if not meetings.self_transcribe():
+        return False        # biên bản họp do agent khác làm (xem meetings.notes_mode)
+
     audio_job = None
     if msg.get("msg_type") == "file":
         try:

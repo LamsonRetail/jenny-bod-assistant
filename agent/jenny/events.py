@@ -35,6 +35,9 @@ def _on_recording_ready(data: lark.CustomizedEvent) -> None:
 
 def _handle_recording(raw: str) -> None:
     from . import lark_user, meetings
+    if not meetings.self_transcribe():
+        log.info("Bỏ qua bản ghi: biên bản họp do agent khác làm (meeting_notes.mode)")
+        return
     try:
         ev = json.loads(raw).get("event", {}) or json.loads(raw)
         meeting = ev.get("meeting", {}) or {}
@@ -93,6 +96,9 @@ def _handle_meeting_ended(raw: str) -> None:
     import time
 
     from . import lark_user, meetings
+    if not meetings.self_transcribe():
+        log.info("Bỏ qua họp kết thúc: biên bản họp do agent khác làm")
+        return
     try:
         ev = json.loads(raw)
         m = ev.get("event", {}).get("meeting", {}) or {}

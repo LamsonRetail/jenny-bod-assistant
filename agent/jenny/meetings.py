@@ -66,11 +66,32 @@ def message_user(open_id: str, text: str) -> None:
             lark_user.send_text(chat_id, text[9000:])
 
 
+def notes_mode() -> str:
+    """Ai làm biên bản họp — config `meeting_notes.mode`.
+
+    'delegate' (mặc định): agent khác làm (Mino) — Jenny KHÔNG tự gỡ băng, chỉ đi hỏi
+    qua tool ask_agent. 'self': Jenny tự chạy pipeline gỡ băng như trước.
+    """
+    cfg = db.all_configs().get("meeting_notes", {}) or {}
+    return (cfg.get("mode") or "delegate").lower()
+
+
+def self_transcribe() -> bool:
+    return notes_mode() == "self"
+
+
 def maybe_watch() -> None:
     global _last_watch
     if time.time() - _last_watch < WATCH_INTERVAL:
         return
     _last_watch = time.time()
+    if not self_transcribe():
+        # Biên bản họp đã giao cho agent khác — chỉ giữ auto-RSVP, không đi xin bản ghi
+        try:
+            _rsvp_upcoming(int(time.time()))
+        except Exception:
+            log.exception("Auto-RSVP lỗi")
+        return
     try:
         _watch()
     except Exception:
