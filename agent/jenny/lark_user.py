@@ -191,11 +191,26 @@ def list_thread_messages(thread_id: str, start_time_sec: int) -> list[dict]:
     return data.get("items", [])
 
 
-def reply_in_thread(message_id: str, text: str) -> str:
+def mention_prefix(open_ids: list[str] | None, names: dict | None = None) -> str:
+    """Markup tag người trong tin text: '<at user_id="ou_x"></at> '.
+
+    Lark chỉ tạo thông báo tag khi markup nằm trong tin GỬI MỚI — tin đã gửi rồi
+    sửa lại (update_text) sẽ không tag được ai.
+    """
+    if not open_ids:
+        return ""
+    names = names or {}
+    return "".join(
+        f'<at user_id="{oid}">{names.get(oid, "")}</at> ' for oid in open_ids if oid)
+
+
+def reply_in_thread(message_id: str, text: str,
+                    mention_open_ids: list[str] | None = None) -> str:
     """Trả lời vào đúng thread chứa message_id. Trả về message_id tin mới."""
+    body = mention_prefix(mention_open_ids) + text
     data = _post(f"/im/v1/messages/{message_id}/reply", {
         "msg_type": "text",
-        "content": json.dumps({"text": text[:9000]}, ensure_ascii=False),
+        "content": json.dumps({"text": body[:9000]}, ensure_ascii=False),
         "reply_in_thread": True,
     })
     return data.get("message_id", "")
@@ -210,16 +225,27 @@ def send_text_to_user(open_id: str, text: str) -> str:
     return data.get("chat_id", "")
 
 
-def send_text(chat_id: str, text: str) -> list[str]:
-    """Gửi text (tự cắt khúc). Trả về danh sách message_id đã gửi."""
+def send_text(chat_id: str, text: str,
+              mention_open_ids: list[str] | None = None) -> list[str]:
+    """Gửi text (tự cắt khúc). Trả về danh sách message_id đã gửi.
+
+    mention_open_ids: tag những người này ở đầu tin ĐẦU TIÊN (các khúc sau không tag
+    lại để khỏi spam thông báo).
+    """
+    body = mention_prefix(mention_open_ids) + text
     ids = []
-    for i in range(0, len(text), 9000):
+    for i in range(0, len(body), 9000):
         data = _post("/im/v1/messages", {
             "receive_id": chat_id, "msg_type": "text",
-            "content": json.dumps({"text": text[i:i + 9000]}, ensure_ascii=False),
+            "content": json.dumps({"text": body[i:i + 9000]}, ensure_ascii=False),
         }, params={"receive_id_type": "chat_id"})
         ids.append(data.get("message_id", ""))
     return ids
+
+
+def recall_message(message_id: str) -> None:
+    """Thu hồi tin nhắn Jenny đã gửi (dùng để xoá tin '⏳ đang xử lý')."""
+    _delete(f"/im/v1/messages/{message_id}")
 
 
 def update_text(message_id: str, text: str) -> None:

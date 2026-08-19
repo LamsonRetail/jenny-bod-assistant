@@ -171,8 +171,10 @@ async def task_complete(args: dict) -> dict:
 @tool("send_lark_message",
       "Gửi tin nhắn đến 1 chat Lark khác (group/người) theo chat_id. CHỈ gửi được vào chat "
       "đã whitelist. Dùng khi cần chuyển tiếp/báo cáo sang chat khác — trong hội thoại "
-      "hiện tại thì trả lời bình thường, không dùng tool này.",
-      {"chat_id": str, "text": str})
+      "hiện tại thì trả lời bình thường, không dùng tool này. "
+      "mention_open_ids: danh sách open_id cần TAG (cách nhau bằng dấu phẩy) — dùng khi "
+      "cần đích danh ai đó trả lời/xử lý; tra open_id bằng org_lookup.",
+      {"chat_id": str, "text": str, "mention_open_ids": str})
 async def send_lark_message(args: dict) -> dict:
     try:
         from . import lark_user
@@ -181,8 +183,9 @@ async def send_lark_message(args: dict) -> dict:
                .eq("channel", "lark").eq("chat_id", chat_id).execute())
         if not res.data or not res.data[0]["whitelisted"]:
             return _text("Từ chối: chat này chưa được whitelist.")
-        lark_user.send_text(chat_id, args["text"])
-        return _text("Đã gửi.")
+        ats = [s.strip() for s in (args.get("mention_open_ids") or "").split(",") if s.strip()]
+        lark_user.send_text(chat_id, args["text"], mention_open_ids=ats or None)
+        return _text("Đã gửi." + (f" Đã tag {len(ats)} người." if ats else ""))
     except Exception as e:
         return _err(e)
 

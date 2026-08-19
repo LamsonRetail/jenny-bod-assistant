@@ -42,6 +42,34 @@ def _parse_text(msg: dict) -> str:
     return text.strip()
 
 
+_last_placeholder: dict[str, float] = {}
+
+
+def _placeholder_cfg() -> dict:
+    """config `placeholder` — tin '⏳ đang xử lý'."""
+    cfg = db.all_configs().get("placeholder", {}) or {}
+    return {
+        "enabled": cfg.get("enabled", True),
+        # Hỏi liên tục trong khoảng này thì KHÔNG gửi lại tin chờ (đỡ rác chat)
+        "cooldown_sec": int(cfg.get("cooldown_sec", 180)),
+        "text": cfg.get("text", "⏳ Em đang xử lý, chờ em chút nhé…"),
+    }
+
+
+def _should_send_placeholder(key: str, cfg: dict) -> bool:
+    if not cfg["enabled"]:
+        return False
+    now = time.time()
+    last = _last_placeholder.get(key, 0.0)
+    if now - last < cfg["cooldown_sec"]:
+        return False
+    _last_placeholder[key] = now
+    if len(_last_placeholder) > 500:          # giới hạn bộ nhớ
+        for k in sorted(_last_placeholder, key=_last_placeholder.get)[:200]:
+            _last_placeholder.pop(k, None)
+    return True
+
+
 def _voice_cfg() -> dict:
     """Cấu hình xử lý tin nhắn thoại (config `voice_note`)."""
     cfg = db.all_configs().get("voice_note", {}) or {}
@@ -51,6 +79,16 @@ def _voice_cfg() -> dict:
         "group_requires_reply": cfg.get("group_requires_reply", True),
         "echo_transcript": cfg.get("echo_transcript", True),
     }
+
+
+def _recall(message_id: str) -> None:
+    """Thu hồi tin chờ. Thất bại thì bỏ qua — không được chặn việc trả lời."""
+    if not message_id:
+        return
+    try:
+        lark_user.recall_message(message_id)
+    except Exception as e:
+        log.warning("Không thu hồi được tin chờ %s: %s", message_id, e)
 
 
 def _voice_transcript(chat: dict, msg: dict, in_thread: bool) -> str:
@@ -198,11 +236,14 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     sender0 = (msg.get("sender", {}).get("id") or "")
     # Trong thread: trả lời vào đúng thread (reply theo message_id); ngoài thread: gửi chat.
     reply_to = msg.get("message_id", "") if in_thread else ""
+    is_group = chat.get("chat_mode", "group") == "group" and chat.get("chat_type") != "p2p"
 
-    def _say(t: str) -> str:
+    def _say(t: str, mention: bool = False) -> str:
+        # Trong group: tag người hỏi để họ nhận thông báo. Chat riêng thì không cần.
+        ats = [sender0] if (mention and is_group and sender0) else None
         if reply_to:
-            return lark_user.reply_in_thread(reply_to, t)
-        ids = lark_user.send_text(chat["chat_id"], t)
+            return lark_user.reply_in_thread(reply_to, t, mention_open_ids=ats)
+        ids = lark_user.send_text(chat["chat_id"], t, mention_open_ids=ats)
         return ids[0] if ids else ""
     try:
         _index_resources(chat, msg, text, sender0)
@@ -229,8 +270,7 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     if not text:
         return
     chat_id = chat["chat_id"]
-    is_group = chat.get("chat_mode", "group") == "group" and chat.get("chat_type") != "p2p"
-    sender_id = (msg.get("sender", {}).get("id") or "")
+    sender_id = sender0
 
     conv = db.get_or_create_conversation("lark", chat_id, chat.get("name"), is_group)
     db.log_message(conv["id"], "in", ("🎤 " if is_voice else "") + text, sender_id=sender_id)
@@ -277,12 +317,16 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
         _say(_cached["answer"])
         return
 
-    # "Typing indicator": gửi placeholder ngay, xong thì edit thành câu trả lời
+    # "Typing indicator": gửi tin chờ, xong thì THU HỒI rồi gửi câu trả lời mới
+    # (phải gửi tin mới chứ không sửa tin cũ, vì tin đã sửa không tag được người hỏi).
+    # Hỏi liên tục thì bỏ tin chờ để không rác chat.
     placeholder_id = ""
-    try:
-        placeholder_id = _say("⏳ Em đang xử lý, chờ em chút nhé…")
-    except Exception:
-        log.warning("Không gửi được placeholder")
+    ph_cfg = _placeholder_cfg()
+    if _should_send_placeholder(f"{chat_id}:{sender_id}", ph_cfg):
+        try:
+            placeholder_id = _say(ph_cfg["text"])
+        except Exception:
+            log.warning("Không gửi được tin chờ")
 
     # Hồ sơ người hỏi (từ danh bạ tổ chức + ghi chú tự học)
     sender_name, sender_context = sender_id or "Người dùng", ""
@@ -333,14 +377,8 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
             allowed_tools=policy.allowed_tools(agent.ALLOWED_TOOLS, can_assign=can_assign))
     except Exception:
         log.exception("agent.run failed")
-        err = "Em gặp lỗi khi xử lý, anh/chị thử lại giúp em nhé."
-        try:
-            if placeholder_id:
-                lark_user.update_text(placeholder_id, err)
-            else:
-                _say(err)
-        except Exception:
-            _say(err)
+        _recall(placeholder_id)
+        _say("Em gặp lỗi khi xử lý, anh/chị thử lại giúp em nhé.", mention=True)
         return
 
     usage = reply.usage or {}
@@ -353,13 +391,8 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     if is_voice and _voice_cfg()["echo_transcript"]:
         display = f"🎤 Em nghe: «{text[:300]}»\n\n{reply.text}"
     first, rest = display[:9000], display[9000:]
-    try:
-        if placeholder_id:
-            lark_user.update_text(placeholder_id, first)
-        else:
-            _say(first)
-    except Exception:
-        _say(first)
+    _recall(placeholder_id)          # xoá tin chờ trước khi trả lời
+    _say(first, mention=True)
     if rest:
         _say(rest)
 
