@@ -176,42 +176,59 @@ def _agent_flags() -> tuple[set, list]:
 
 
 @tool("group_members",
-      "Liệt kê THÀNH VIÊN trong group Lark kèm open_id để TAG, và đánh dấu ai là AGENT. "
+      "Liệt kê ai TAG ĐƯỢC trong group Lark kèm open_id — gồm cả NGƯỜI và BOT/AGENT. "
       "keyword: lọc theo tên (bỏ trống = liệt kê, tối đa 60 dòng). chat_id lấy từ bối cảnh "
-      "hội thoại. Dùng khi cần tag đích danh ai đó mà chưa biết open_id: gọi tool này tra "
-      "tên → lấy open_id → chèn `<at user_id=\"ou_xxx\"></at>` vào câu trả lời. "
-      "GIỚI HẠN QUAN TRỌNG: Lark KHÔNG cho liệt kê bot/app trong group (API chỉ nhận "
-      "user_id/union_id/open_id, endpoint bot không tồn tại). Vì vậy danh sách chỉ có người "
-      "thật và các agent chạy bằng TÀI KHOẢN NGƯỜI DÙNG (như chính Jenny). Nếu ai nhờ tag "
-      "một bot/agent không có trong danh sách, phải nói thẳng là Lark không cho phép tag "
-      "bot qua API — muốn tag được thì agent đó phải vào group bằng tài khoản người dùng.",
-      {"chat_id": str, "keyword": str})
+      "hội thoại. Cách dùng: tra tên → lấy open_id → chèn `<at user_id=\"ou_xxx\"></at>` "
+      "vào câu trả lời là tag được (bot app cũng tag được y như người). "
+      "Nguồn dữ liệu: người thật lấy từ API thành viên; BOT/AGENT lấy từ sổ đăng ký mà "
+      "Jenny học được từ lịch sử tin nhắn (vì API Lark không liệt kê bot app). "
+      "Nếu tìm không thấy bot cần tag, gọi lại với discover=true để quét lại lịch sử chat.",
+      {"chat_id": str, "keyword": str, "bots_only": bool, "discover": bool})
 async def group_members(args: dict) -> dict:
     try:
-        from . import lark_user
+        from . import lark_user, mentionables
         chat_id = (args.get("chat_id") or "").split("#", 1)[0].strip()
         if not chat_id:
             return _text("Thiếu chat_id.")
         kw = (args.get("keyword") or "").strip()
-        rows = lark_user.find_members_by_name(chat_id, kw)
-        if not rows:
-            return _text(f"Không thấy thành viên nào khớp '{kw}' trong group này.")
-        agent_ids, agent_pats = _agent_flags()
-        lines, agents = [], []
-        for m in rows[:60]:
-            is_agent = m["open_id"] in agent_ids or any(
-                p in m["name"].lower() for p in agent_pats)
-            tag = " 🤖 AGENT" if is_agent else ""
-            lines.append(f"- {m['name']}{tag}\n  open_id: {m['open_id']}")
-            if is_agent:
-                agents.append(m["name"])
-        head = f"{len(rows)} thành viên khớp"
-        if len(rows) > 60:
-            head += " (hiện 60 đầu)"
-        if agents:
-            head += f" · agent trong group: {', '.join(agents)}"
-        return _text(head + ":\n" + "\n".join(lines)
-                     + "\n\nTag bằng cách chèn <at user_id=\"ou_xxx\"></at> vào câu trả lời.")
+        bots_only = bool(args.get("bots_only"))
+
+        if args.get("discover"):
+            res = mentionables.discover(chat_id, days=180, max_pages=30)
+            note = (f"(vừa quét lại {res['messages']} tin, "
+                    f"thấy {len(res['bots'])} bot/agent)\n")
+        else:
+            note = ""
+
+        # BOT/AGENT — từ sổ đăng ký học được (API Lark không trả bot app)
+        bots = mentionables.list_for_chat(chat_id, kw, bots_only=True)
+        if not bots and not args.get("discover"):
+            res = mentionables.discover(chat_id, days=180, max_pages=20)
+            bots = mentionables.list_for_chat(chat_id, kw, bots_only=True)
+            note = (f"(chưa có sổ bot cho chat này nên em quét {res['messages']} tin "
+                    f"lịch sử, thấy {len(res['bots'])} bot/agent)\n")
+
+        lines = []
+        for b in bots[:40]:
+            lines.append(f"- {b['name']} 🤖 BOT/AGENT\n  open_id: {b['open_id']}")
+
+        humans = []
+        if not bots_only:
+            agent_ids, agent_pats = _agent_flags()
+            for m in lark_user.find_members_by_name(chat_id, kw)[:60]:
+                mark = " 🤖 AGENT (tài khoản người dùng)" if (
+                    m["open_id"] in agent_ids
+                    or any(p in m["name"].lower() for p in agent_pats)) else ""
+                humans.append(f"- {m['name']}{mark}\n  open_id: {m['open_id']}")
+
+        if not lines and not humans:
+            return _text(note + f"Không thấy ai khớp '{kw}' trong chat này.")
+        out = note
+        if lines:
+            out += f"**BOT/AGENT ({len(bots)})**\n" + "\n".join(lines) + "\n\n"
+        if humans:
+            out += f"**NGƯỜI ({len(humans)})**\n" + "\n".join(humans) + "\n\n"
+        return _text(out + "Tag bằng cách chèn <at user_id=\"ou_xxx\"></at> vào câu trả lời.")
     except Exception as e:
         return _err(e)
 

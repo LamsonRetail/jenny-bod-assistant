@@ -121,9 +121,11 @@ def run_scheduler() -> None:
         try:
             now = dt.datetime.now(VN)
             _maybe_sync_org()
-            from . import anomaly, assignments, decisions, doc_watch, meetings
+            from . import (anomaly, assignments, decisions, doc_watch, meetings,
+                           mentionables)
             meetings.maybe_watch()
             doc_watch.maybe_watch()
+            mentionables.maybe_discover()  # học ai tag được trong group (gồm bot)
             anomaly.maybe_check()        # cảnh báo bất thường + signpost
             assignments.maybe_chase()    # đôn đốc việc đã giao
             decisions.maybe_review()     # đến hạn đo kết quả quyết định

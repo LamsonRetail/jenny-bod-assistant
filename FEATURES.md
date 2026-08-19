@@ -75,8 +75,9 @@ Trợ lý AI cho Ban điều hành (BOD) công ty **LSR (Lamson Retail)**. Jenny
   - **Chat riêng (p2p)**: người trong config `lark_p2p_partners` được whitelist tự động; Jenny chủ động nhắn chào để mở chat.
   - **Thread (topic reply)**: Jenny **đọc và trả lời ngay trong thread** — tag Jenny trong 1 thread thì trả lời đúng luồng đó. Danh sách thread đang theo dõi được **lưu bền qua Supabase** (`lark_known_threads`), restart không mất dấu.
   - **Tag người hỏi trong group** ⭐: câu trả lời tự động `@mention` người vừa hỏi để họ nhận thông báo (chat riêng thì không tag).
-  - **Tag theo tên** ⭐: tool `group_members(chat_id, keyword)` liệt kê thành viên group kèm `open_id` và **đánh dấu 🤖 tài khoản agent** (config `known_agents`); Jenny tra tên → chèn `<at user_id="ou_…">` vào câu trả lời. Dùng khi cần đích danh ai hành động.
-    **Giới hạn của Lark**: API thành viên chỉ nhận `user_id/union_id/open_id` — **không có `app_id`**, và endpoint `/members/bot` trả 404. Nên **không thể liệt kê hay tag bot/app** trong group. Chỉ tag được người thật và agent chạy bằng **tài khoản người dùng** (đúng cách Jenny đang chạy). Jenny được dạy nói thẳng giới hạn này thay vì viết tag giả.
+  - **Tag theo tên — cả người và BOT** ⭐: tool `group_members(chat_id, keyword)` trả về `open_id` để tag; Jenny chèn `<at user_id="ou_…">` vào câu trả lời.
+    Người thật lấy từ API thành viên. **Bot app lấy từ sổ đăng ký `chat_mentionables`** mà Jenny tự học — vì API Lark **không** liệt kê bot: `member_id_type` chỉ nhận `user_id/union_id/open_id` (không có `app_id`) và `/members/bot` trả 404. Nhưng **bot app vẫn có `open_id` dạng `ou_…` và vẫn tag được bình thường** — id đó nằm trong mảng `mentions` của các tin đã từng tag chúng.
+    Cơ chế học: bắt **thụ động** mỗi khi poller thấy tin có mention · **quét lịch sử** khi chưa có sổ cho chat đó (hoặc gọi `discover=true`) · **quét lại mỗi 24h** trong scheduler. Quét từ mới đến cũ nên luôn giữ **tên mới nhất** (bot hay bị đổi tên).
   - **Tin chờ "⏳ Em đang xử lý…"**: gửi khi bắt đầu xử lý, **thu hồi (recall) rồi gửi câu trả lời mới** khi xong — phải gửi tin mới chứ không sửa tin cũ, vì tin đã sửa không tạo được thông báo tag. **Hỏi liên tục** trong khoảng cooldown (mặc định 180s) thì bỏ tin chờ để không rác chat. Config `placeholder`.
   - **Chống lặp tuyệt đối**: mỗi `message_id` chỉ xử lý 1 lần (dedup có giới hạn bộ nhớ), cursor luôn tiến — tránh trả lời trùng.
 - **Ngữ cảnh người hỏi**: mỗi tin nhắn Jenny tự đính kèm hồ sơ người gửi (chức danh, phòng ban, ghi chú đã học), cờ **thành viên BOD**, và **các việc đang được giao** cho người đó → điều chỉnh câu trả lời theo vai trò.
@@ -234,6 +235,7 @@ Tool web (SDK): `WebSearch`, `WebFetch`. **Bị cấm trên VPS**: `Bash`, `Writ
 | `monitors` ⭐ | phép giám sát số liệu (anomaly + signpost) | 0008 |
 | `anomaly_events` ⭐ | lịch sử bất thường đã phát hiện + diễn giải | 0008 |
 | `decisions` ⭐ | sổ quyết định: kỳ vọng đo được → kết quả thực tế | 0010 |
+| `chat_mentionables` ⭐ | ai tag được trong từng chat, gồm BOT APP (học từ mentions) | 0012 |
 
 *(RLS bật toàn bộ, không policy → chỉ service key trên VPS truy cập; dashboard dùng auth riêng.)*
 

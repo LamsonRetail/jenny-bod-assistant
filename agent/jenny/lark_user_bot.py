@@ -249,6 +249,11 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
         _index_resources(chat, msg, text, sender0)
     except Exception:
         log.exception("index resource lỗi")
+    try:  # học dần "ai tag được" trong chat này (kể cả bot app) từ mentions
+        from . import mentionables
+        mentionables.save_seen(chat["chat_id"], msg.get("mentions"))
+    except Exception:
+        log.debug("save mentionables lỗi", exc_info=True)
     try:
         if _maybe_meeting_recording(msg, text, sender0):
             return
