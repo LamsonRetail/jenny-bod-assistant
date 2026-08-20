@@ -118,7 +118,16 @@ Jenny **không tự gỡ băng nữa**. Biên bản họp do agent **Mino** ph�
 - Ai gửi file ghi âm cho Jenny sẽ được hướng dẫn gửi cho Mino. Mino không trả lời thì Jenny nói thẳng, **không bịa nội dung biên bản**.
 - Skill `meeting-notes` đã viết lại theo hướng này.
 
-**Giao tiếp agent-với-agent** ⭐: tool `ask_agent(agent, question, wait_sec)` gửi câu hỏi vào chat của agent kia (tag nếu có `open_id`) rồi **chờ đồng bộ** tin trả lời đầu tiên không phải của Jenny; timeout thì báo rõ. Danh bạ ở config `peer_agents` (tên → chat_id, open_id, việc phụ trách, thời gian chờ) — thêm agent mới không cần deploy. Xem danh bạ bằng `peer_agents_list`.
+**Giao tiếp agent-với-agent (A2A)** ⭐
+
+*Jenny hỏi agent khác (outbound)*: tool `ask_agent(agent, question, wait_sec)` gửi câu hỏi vào chat của agent kia (tag nếu có `open_id`) rồi **chờ đồng bộ** tin trả lời đầu tiên không phải của Jenny; timeout thì báo rõ. Danh bạ ở config `peer_agents` — thêm agent mới không cần deploy. Xem bằng `peer_agents_list`.
+
+*Agent khác hỏi Jenny (inbound)*: bản khai năng lực nằm ở **`capabilities.py`** — một nguồn cho cả 3 nơi:
+- **`my_capabilities(format)`** ⭐ — Jenny tự trả lời "tôi làm được gì / hỏi tôi thế nào" ngay trong chat. **Đây là đường A2A chính**, vì agent khác chỉ cần nhắn Lark là hỏi được.
+- **`GET /.well-known/agent.json`** (Agent Card máy đọc) và **`GET /a2a`** (bản chữ ~6.000 ký tự) trên `jenny-web`. ⚠️ Hiện chỉ truy cập được **trong VPS** — nginx đang chiếm 443/80 và không route tới jenny-web, nên chưa ra internet.
+- **Đẩy về LSR platform qua trace** (`extra.agent_card`) — platform **không mở API đăng ký năng lực** (mọi endpoint trả 403 với token telemetry), nên kênh trace là đường duy nhất có xác thực. Announce lại mỗi 24h trong scheduler; cũng khai trong `lsr-agent.yaml` (mục `capabilities` / `not_supported` / `a2a`).
+- Khai rõ cả **8 năng lực** và **3 việc không làm** (biên bản họp → Mino · không ghi dữ liệu · không thông tin nhân sự cá nhân) để agent khác không hỏi sai chỗ.
+- Chat của agent trong config **`a2a_allowed_agents`** được **duyệt tự động**, không phải chờ admin gõ `/approve`.
 
 <details><summary>Pipeline tự gỡ băng cũ (vẫn còn code, chỉ bật khi <code>mode = self</code>)</summary>
 
@@ -216,7 +225,7 @@ Vòng lặp không công cụ nào trên thị trường làm đủ:
 | Task | `task_create`, `task_list`, `task_complete` |
 | Tin nhắn | `send_lark_message` |
 | Họp | `meeting_list_pending`, `meeting_save_draft`, `meeting_finalize` *(chỉ dùng ở chế độ `self`)* |
-| Agent khác ⭐ | `ask_agent`, `peer_agents_list` |
+| Agent khác ⭐ | `ask_agent`, `peer_agents_list`, `my_capabilities` |
 | Tổ chức | `org_lookup`, `person_note_save` |
 | Tài nguyên | `search_resources`, `recent_resources`, `watch_document` |
 | Thành viên group ⭐ | `group_members` (liệt kê + open_id để tag, đánh dấu agent) |
@@ -263,7 +272,7 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 `persona`, `company_instructions`, `reply_rules` (trigger_names…), `bq_data_dictionary` (project_id + link wiki), `internal_docs`, `drive_memory_folder` / `lark_memory`, `notebooklm`, `transcribe_server`, `lark_admin_ids`, `lark_p2p_partners`, `lark_p2p_map`, `lark_known_threads`, `bod_members`, `meeting_authorized_ids`, `org_sync` / `org_chart_file`, `doc_comment_cursor`, `lark_user_token`.
 
-Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `placeholder` ⭐ (tin chờ + cooldown) · `known_agents` ⭐ (đánh dấu tài khoản agent) · `peer_agents` ⭐ (danh bạ agent để hỏi) · `meeting_notes` ⭐ (delegate/self).
+Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `placeholder` ⭐ (tin chờ + cooldown) · `known_agents` ⭐ (đánh dấu tài khoản agent) · `peer_agents` ⭐ (danh bạ agent để hỏi) · `meeting_notes` ⭐ (delegate/self) · `a2a_allowed_agents` ⭐ (agent được phép hỏi Jenny) · `capability_announce` ⭐.
 
 **Skills đang có**: `web-research` ✅, `bigquery-analytics` ✅, `internal-knowledge` ✅, `memory`, `decision-support` ⭐, `proactive-monitoring` ⭐ (kèm các skill nghiệp vụ bổ sung trên Supabase). Thêm/bật/tắt skill từ dashboard → Jenny nạp lại ở phiên mới.
 

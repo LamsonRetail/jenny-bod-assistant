@@ -259,6 +259,32 @@ async def send_lark_message(args: dict) -> dict:
         return _err(e)
 
 
+@tool("my_capabilities",
+      "Bản khai năng lực của CHÍNH JENNY + hướng dẫn agent khác hỏi Jenny (A2A). "
+      "Dùng khi được hỏi 'bạn làm được gì', 'Jenny có năng lực nào', hoặc khi MỘT AGENT "
+      "KHÁC hỏi cách phối hợp/gọi Jenny. format='short' (mặc định, danh sách gọn) hoặc "
+      "'full' (đầy đủ kèm ví dụ câu hỏi, giới hạn, cách gửi yêu cầu). Trả lời dựa đúng "
+      "danh sách này, KHÔNG tự nhận thêm năng lực không có trong đó.",
+      {"format": str})
+async def my_capabilities(args: dict) -> dict:
+    try:
+        from . import capabilities
+        if (args.get("format") or "short").lower() == "full":
+            return _text(capabilities.as_markdown()[:MAX_CHARS])
+        lines = [f"- **{c['name']}** (`{c['id']}`): {c['description']}"
+                 for c in capabilities.CAPABILITIES]
+        no = [f"- {n['id']}: {n['reason']}" for n in capabilities.NOT_SUPPORTED]
+        a = capabilities.a2a_howto()
+        return _text("**Jenny làm được:**\n" + "\n".join(lines)
+                     + "\n\n**Không làm:**\n" + "\n".join(no)
+                     + f"\n\n**Agent khác hỏi Jenny:** tag hoặc nhắn riêng open_id "
+                       f"`{a['address']['open_id']}` trên Lark, câu hỏi phải tự đủ ngữ "
+                       f"cảnh (Jenny không thấy hội thoại phía bạn). Chi tiết: gọi lại "
+                       f"tool này với format='full'.")
+    except Exception as e:
+        return _err(e)
+
+
 # ---------- Hỏi agent khác (agent-to-agent) ----------
 
 @tool("ask_agent",
@@ -935,7 +961,7 @@ lark_server = create_sdk_mcp_server(
            task_create, task_list, task_complete,
            send_lark_message,
            meeting_list_pending, meeting_save_draft, meeting_finalize,
-           ask_agent, peer_agents_list,
+           ask_agent, peer_agents_list, my_capabilities,
            org_lookup, person_note_save,
            search_resources, recent_resources, watch_document, group_members,
            notebooklm_ask, notebooklm_add_source, notebooklm_audio_overview,

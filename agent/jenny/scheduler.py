@@ -126,6 +126,8 @@ def run_scheduler() -> None:
             meetings.maybe_watch()
             doc_watch.maybe_watch()
             mentionables.maybe_discover()  # học ai tag được trong group (gồm bot)
+            from . import capabilities
+            capabilities.maybe_announce()  # khai năng lực + A2A về LSR platform
             anomaly.maybe_check()        # cảnh báo bất thường + signpost
             assignments.maybe_chase()    # đôn đốc việc đã giao
             decisions.maybe_review()     # đến hạn đo kết quả quyết định

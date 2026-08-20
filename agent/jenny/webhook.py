@@ -98,6 +98,23 @@ def _save_meeting(source: str, title: str, day: str, md: str) -> dict:
     return {"ok": True, "file": fname, **res}
 
 
+@app.get("/.well-known/agent.json")
+def agent_card() -> dict:
+    """Agent Card — agent khác đọc bằng máy để biết Jenny làm được gì và hỏi thế nào."""
+    from . import capabilities
+    return capabilities.manifest()
+
+
+@app.get("/a2a")
+def a2a_doc():
+    """Bản khai năng lực + hướng dẫn A2A dạng chữ (markdown)."""
+    from fastapi.responses import PlainTextResponse
+
+    from . import capabilities
+    return PlainTextResponse(capabilities.as_markdown(),
+                             media_type="text/markdown; charset=utf-8")
+
+
 @app.get("/health")
 def health() -> dict:
     from . import lark_user

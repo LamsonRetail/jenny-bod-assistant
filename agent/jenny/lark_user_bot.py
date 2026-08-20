@@ -300,6 +300,18 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     if is_group and not (is_voice and in_thread) \
             and not _mentioned_me(msg, my_open_id, text):
         return
+    # Agent khác hỏi Jenny (A2A): agent trong danh sách cho phép được duyệt tự động,
+    # không phải chờ admin gõ /approve.
+    if not conv["whitelisted"] and sender_id:
+        try:
+            from . import capabilities
+            if sender_id in capabilities.allowed_agents():
+                db.set_whitelisted(conv["id"], True)
+                conv["whitelisted"] = True
+                log.info("Tự duyệt chat A2A với agent %s", sender_id)
+        except Exception:
+            log.exception("Kiểm tra a2a_allowed_agents lỗi")
+
     # Mở cho toàn công ty (config open_access); tắt config → quay lại luồng /approve.
     if not conv["whitelisted"] and not policy.is_open_access():
         _say("Chat này chưa được duyệt sử dụng Jenny.\n"
