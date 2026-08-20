@@ -92,7 +92,8 @@ Trợ lý AI cho Ban điều hành (BOD) công ty **LSR (Lamson Retail)**. Jenny
 - **`bq_recent_queries`**: lấy lại các câu SQL đã chạy thành công gần đây (từ lịch sử `tool_calls`) để **tái sử dụng đúng query cũ** thay vì viết lại — dùng khi "dùng lại query trước", "cập nhật lại số đó".
 
 ### 4.2. Tài liệu & tri thức nội bộ Lark *(theo plan)*
-- **`read_lark_document`**: đọc nội dung wiki/docx/base bằng quyền tài khoản Jenny (không dùng WebFetch với link Lark — sẽ bị chặn đăng nhập).
+- **`read_lark_document`**: đọc **wiki · docx · base · Sheet (bảng tính)** ⭐ bằng quyền tài khoản Jenny (không dùng WebFetch với link Lark — sẽ bị chặn đăng nhập). Chỉ cần file được **share cho account Jenny, không cần add bot**.
+- **Bảng tính (Sheet)** ⭐: đọc qua `sheets/v3/…/sheets/query` (danh sách trang) + `sheets/v2/…/values/{range}` (dữ liệu), trả về **bảng markdown theo từng trang**. Giới hạn 200 dòng × 30 cột mỗi trang, 8 trang; bị cắt thì ghi rõ tổng số dòng. Tự **bỏ dòng và cột trống ở cuối** (lưới sheet mặc định rộng 20+ cột — in hết vừa rác vừa tốn token), bỏ qua trang ẩn, và làm phẳng ô dạng link/mention thành chữ.
 - Skill `internal-knowledge`: trả lời theo tài liệu khai trong config `internal_docs`; chưa có thì nói rõ, không suy đoán.
 
 ### 4.3. Lịch làm việc — Lark Calendar *(theo plan)*

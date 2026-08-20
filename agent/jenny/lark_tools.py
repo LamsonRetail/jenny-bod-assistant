@@ -40,7 +40,11 @@ def _fmt_ts(ts: str | int) -> str:
 
 @tool("read_lark_document",
       "Đọc nội dung tài liệu Lark bằng quyền của account Jenny (KHÔNG dùng WebFetch với "
-      "link Lark — sẽ bị chặn đăng nhập). Nhận link wiki/docx/base.",
+      "link Lark — sẽ bị chặn đăng nhập). Nhận link wiki / docx / base / **sheets "
+      "(bảng tính)**. Bảng tính trả về từng trang dưới dạng bảng markdown, tối đa 200 "
+      "dòng × 30 cột mỗi trang và 8 trang; nếu bị cắt thì tool ghi rõ tổng số dòng — cần "
+      "phần sau thì nói người dùng khoanh vùng lại. Chỉ cần file được SHARE cho account "
+      "Jenny, KHÔNG cần add bot vào file.",
       {"url": str})
 async def read_lark_document(args: dict) -> dict:
     url = (args.get("url") or "").strip()

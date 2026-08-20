@@ -679,22 +679,125 @@ def complete_task(task_guid: str) -> None:
                    "update_fields": ["completed_at"]})
 
 
-def read_document(url_or_token: str) -> str:
-    """Đọc nội dung wiki/doc/bitable bằng quyền của account Jenny.
+def _col_letter(n: int) -> str:
+    """1 → A, 26 → Z, 27 → AA (tên cột kiểu bảng tính)."""
+    s = ""
+    while n > 0:
+        n, r = divmod(n - 1, 26)
+        s = chr(65 + r) + s
+    return s or "A"
 
-    Nhận link wiki (…/wiki/<token>), link docx (…/docx/<token>),
-    link base (…/base/<token>) hoặc token trần (coi như wiki node).
+
+def _flatten_cell(v: Any) -> str:
+    """Ô trong Lark Sheet có thể là chữ, số, hoặc list segment (link, mention…)."""
+    if v is None:
+        return ""
+    if isinstance(v, (str, int, float)):
+        return str(v)
+    if isinstance(v, dict):
+        for k in ("text", "name", "link", "value"):
+            if v.get(k):
+                return str(v[k])
+        return ""
+    if isinstance(v, list):
+        return " ".join(x for x in (_flatten_cell(i) for i in v) if x)
+    return str(v)
+
+
+def _rows_to_md(values: list[list], max_cols: int) -> str:
+    """Bảng 2 chiều → markdown table (đệm cho đều cột, bỏ dòng trống ở cuối)."""
+    rows = [[_flatten_cell(c) for c in (r or [])][:max_cols] for r in values]
+    while rows and not any(c.strip() for c in rows[-1]):      # bỏ dòng trống ở cuối
+        rows.pop()
+    if not rows:
+        return "(trang này trống)"
+    # Bỏ CỘT trống ở cuối — lưới sheet thường rộng mặc định 20+ cột, in hết vừa rác
+    # vừa tốn token vô ích.
+    width = 0
+    for r in rows:
+        for i, c in enumerate(r):
+            if c.strip():
+                width = max(width, i + 1)
+    if width == 0:
+        return "(trang này trống)"
+    rows = [(r + [""] * width)[:width] for r in rows]
+    head, body = rows[0], rows[1:]
+    out = ["| " + " | ".join(c.replace("|", "\\|") or f"C{i+1}"
+                             for i, c in enumerate(head)) + " |",
+           "|" + "---|" * width]
+    for r in body:
+        out.append("| " + " | ".join(c.replace("|", "\\|").replace("\n", " ")
+                                     for c in r) + " |")
+    return "\n".join(out)
+
+
+SHEET_MAX_ROWS = 200
+SHEET_MAX_COLS = 30
+SHEET_MAX_TABS = 8
+
+
+def _read_sheet(token: str) -> str:
+    """Đọc bảng tính Lark (Sheet) bằng quyền account — trả markdown theo từng trang.
+
+    Dùng scope `sheets:spreadsheet:readonly` (đã có trong SCOPES). Chỉ cần file được
+    SHARE cho account Jenny, không cần add bot vào file.
+    """
+    title = ""
+    try:
+        meta = _get(f"/sheets/v3/spreadsheets/{token}")
+        title = ((meta.get("spreadsheet") or {}).get("title") or "").strip()
+    except Exception as e:
+        log.debug("Không lấy được tiêu đề sheet: %s", e)
+
+    tabs = (_get(f"/sheets/v3/spreadsheets/{token}/sheets/query").get("sheets") or [])
+    out = [f"# {title or '(bảng tính)'}",
+           f"_Bảng tính Lark · {len(tabs)} trang_"]
+    for sh in tabs[:SHEET_MAX_TABS]:
+        sid = sh.get("sheet_id") or ""
+        name = sh.get("title") or sid
+        if sh.get("hidden"):
+            out.append(f"\n## {name}\n(trang đang ẩn — bỏ qua)")
+            continue
+        grid = sh.get("grid_properties") or {}
+        n_rows = min(int(grid.get("row_count") or SHEET_MAX_ROWS), SHEET_MAX_ROWS)
+        n_cols = min(int(grid.get("column_count") or SHEET_MAX_COLS), SHEET_MAX_COLS)
+        rng = f"{sid}!A1:{_col_letter(n_cols)}{max(n_rows, 1)}"
+        try:
+            data = _get(f"/sheets/v2/spreadsheets/{token}/values/{rng}")
+            values = ((data.get("valueRange") or {}).get("values")) or []
+        except Exception as e:
+            out.append(f"\n## {name}\n(không đọc được: {e})")
+            continue
+        note = ""
+        if int(grid.get("row_count") or 0) > SHEET_MAX_ROWS:
+            note = (f" · đã cắt còn {SHEET_MAX_ROWS} dòng đầu "
+                    f"(tổng {grid.get('row_count')} dòng)")
+        out.append(f"\n## {name}{note}")
+        out.append(_rows_to_md(values, n_cols))
+    if len(tabs) > SHEET_MAX_TABS:
+        out.append(f"\n_(còn {len(tabs) - SHEET_MAX_TABS} trang nữa chưa đọc)_")
+    return "\n".join(out)
+
+
+def read_document(url_or_token: str) -> str:
+    """Đọc nội dung wiki/doc/bitable/sheet bằng quyền của account Jenny.
+
+    Nhận link wiki (…/wiki/<token>), docx (…/docx/<token>), base (…/base/<token>),
+    bảng tính (…/sheets/<token>) hoặc token trần (coi như wiki node).
     """
     import re
-    m = re.search(r"/(wiki|docx|docs|base)/([A-Za-z0-9]+)", url_or_token)
+    m = re.search(r"/(wiki|docx|docs|base|sheets)/([A-Za-z0-9]+)", url_or_token)
     kind, token = (m.group(1), m.group(2)) if m else ("wiki", url_or_token)
-    obj_type = {"docx": "docx", "docs": "docx", "base": "bitable"}.get(kind, "")
+    obj_type = {"docx": "docx", "docs": "docx", "base": "bitable",
+                "sheets": "sheet"}.get(kind, "")
     if kind == "wiki":
         node = _get("/wiki/v2/spaces/get_node", {"token": token}).get("node", {})
         token = node.get("obj_token", token)
         obj_type = node.get("obj_type", "docx")
     if obj_type == "bitable":
         return _read_bitable(token)
+    if obj_type in ("sheet", "sheets", "spreadsheet"):
+        return _read_sheet(token)
     if obj_type in ("docx", "doc"):
         return _get(f"/docx/v1/documents/{token}/raw_content").get("content", "")
     raise RuntimeError(f"Chưa hỗ trợ đọc loại tài liệu '{obj_type}'")
