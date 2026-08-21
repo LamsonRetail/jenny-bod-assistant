@@ -303,7 +303,7 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     if not conv["whitelisted"] and sender_id:
         try:
             from . import capabilities
-            if sender_id in capabilities.allowed_agents():
+            if capabilities.is_agent_sender(sender_id):
                 db.set_whitelisted(conv["id"], True)
                 conv["whitelisted"] = True
                 log.info("Tự duyệt chat A2A với agent %s", sender_id)

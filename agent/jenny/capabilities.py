@@ -170,9 +170,35 @@ def a2a_howto() -> dict:
 
 
 def allowed_agents() -> list[str]:
-    """open_id các agent được phép hỏi Jenny (config `a2a_allowed_agents`)."""
+    """open_id các agent được khai tên rõ trong config `a2a_allowed_agents`."""
     cfg = db.all_configs().get("a2a_allowed_agents", {}) or {}
     return [str(i) for i in (cfg.get("open_ids") or [])]
+
+
+def a2a_open_to_all() -> bool:
+    """Mở A2A cho MỌI agent trong platform (config `a2a_allowed_agents.allow_all`).
+
+    Bật thì không cần khai từng open_id: bất cứ ai gửi tin mà KHÔNG có trong danh bạ
+    nhân sự (tức là bot app / agent) đều được coi là agent và được duyệt tự động.
+    """
+    cfg = db.all_configs().get("a2a_allowed_agents", {}) or {}
+    return bool(cfg.get("allow_all", False))
+
+
+def is_agent_sender(open_id: str) -> bool:
+    """Người gửi này có phải agent (bot app) không — dùng Contact API để phân biệt."""
+    if not open_id:
+        return False
+    if open_id in allowed_agents():
+        return True
+    if not a2a_open_to_all():
+        return False
+    try:
+        from . import mentionables
+        return bool(mentionables.classify_bots([open_id]).get(open_id))
+    except Exception:
+        log.exception("Không phân loại được người gửi %s", open_id)
+        return False
 
 
 def manifest() -> dict:

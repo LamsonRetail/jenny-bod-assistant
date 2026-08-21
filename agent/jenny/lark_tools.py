@@ -335,6 +335,13 @@ async def peer_agents_list(args: dict) -> dict:
 async def meeting_list_pending(args: dict) -> dict:
     try:
         from . import meetings
+        # Chế độ delegate: biên bản họp do agent khác (Mino) làm → Jenny KHÔNG báo cáo
+        # danh sách họp chờ nội dung nữa. Chặn ngay ở tầng tool để dù prompt của lịch
+        # định kỳ có sót yêu cầu cũ thì báo cáo cũng không chèn nội dung họp vào.
+        if not meetings.self_transcribe():
+            return _text("Biên bản họp hiện do agent MINO phụ trách — Jenny không theo "
+                         "dõi danh sách họp chờ nội dung nữa. KHÔNG đưa mục này vào báo "
+                         "cáo. Cần nội dung cuộc họp thì dùng ask_agent với agent='mino'.")
         rows = meetings.pending()
         if not rows:
             return _text("Không có cuộc họp nào chờ xử lý.")
@@ -530,6 +537,84 @@ async def schedule_list(args: dict) -> dict:
             f"- [{r['id']}] {r['name']} · cron `{r['cron']}` · "
             f"{'BẬT' if r['enabled'] else 'TẮT'} · gửi {r['channel']}/{r['chat_id']}"
             for r in rows))
+    except Exception as e:
+        return _err(e)
+
+
+@tool("schedule_update",
+      "SỬA một lịch chạy định kỳ đã có (id lấy từ schedule_list, 8 ký tự đầu cũng được). "
+      "**BẮT BUỘC dùng tool này khi người dùng yêu cầu thay đổi nội dung báo cáo định kỳ** "
+      "— ví dụ 'bỏ phần họp ra khỏi tổng kết cuối ngày', 'thêm phần tồn kho vào brief "
+      "sáng', 'đổi giờ chạy'. Nếu chỉ trả lời 'vâng em sẽ bỏ' mà KHÔNG gọi tool này thì "
+      "lần chạy sau vẫn y như cũ — đó là lỗi nghiêm trọng. "
+      "prompt: nội dung MỚI thay thế toàn bộ (bỏ trống = giữ nguyên). "
+      "prompt_remove: đoạn/dòng cần XOÁ khỏi prompt hiện tại (khớp một phần, không phân "
+      "biệt hoa thường) — dùng khi chỉ cần bỏ một mục. "
+      "prompt_append: đoạn cần THÊM vào cuối prompt. "
+      "cron/name/chat_id/enabled/until: sửa nếu truyền. "
+      "Sau khi sửa, ĐỌC LẠI prompt trong kết quả trả về và xác nhận với người dùng đúng "
+      "phần họ muốn đổi.",
+      {"schedule_id": str, "prompt": str, "prompt_remove": str, "prompt_append": str,
+       "cron": str, "name": str, "chat_id": str, "enabled": bool, "until": str})
+async def schedule_update(args: dict) -> dict:
+    try:
+        sid = (args.get("schedule_id") or "").strip()
+        if not sid:
+            return _text("Thiếu schedule_id.")
+        rows = db.sb().table("scheduled_tasks").select("*").execute().data
+        match = [r for r in rows if r["id"] == sid or r["id"].startswith(sid)]
+        if not match:
+            return _text(f"Không tìm thấy lịch nào có id bắt đầu bằng '{sid}'. "
+                         "Gọi schedule_list để xem danh sách.")
+        if len(match) > 1:
+            return _text(f"'{sid}' khớp {len(match)} lịch — truyền id dài hơn.")
+        row = match[0]
+        patch: dict = {}
+
+        cur_prompt = row.get("prompt") or ""
+        new_prompt = cur_prompt
+        if (args.get("prompt") or "").strip():
+            new_prompt = args["prompt"]
+        if (args.get("prompt_remove") or "").strip():
+            needle = args["prompt_remove"].strip().lower()
+            kept = [ln for ln in new_prompt.splitlines()
+                    if needle not in ln.strip().lower()]
+            if len(kept) == len(new_prompt.splitlines()):
+                # không khớp theo dòng → thử bỏ đúng đoạn văn bản
+                import re as _re
+                new2 = _re.sub(_re.escape(args["prompt_remove"]), "", new_prompt,
+                               flags=_re.I).strip()
+                if new2 == new_prompt.strip():
+                    return _text(f"Không thấy đoạn '{args['prompt_remove'][:60]}' trong "
+                                 f"prompt hiện tại. Prompt đang là:\n\n{cur_prompt}")
+                new_prompt = new2
+            else:
+                new_prompt = "\n".join(kept)
+        if (args.get("prompt_append") or "").strip():
+            new_prompt = (new_prompt.rstrip() + "\n" + args["prompt_append"].strip())
+        if new_prompt != cur_prompt:
+            patch["prompt"] = new_prompt.strip()
+
+        if (args.get("cron") or "").strip():
+            if len(args["cron"].split()) != 5:
+                return _text("cron phải có 5 trường 'phút giờ ngày tháng thứ' (giờ VN).")
+            patch["cron"] = args["cron"].strip()
+        for k in ("name", "chat_id"):
+            if (args.get(k) or "").strip():
+                patch[k] = args[k].strip()
+        if args.get("enabled") is not None:
+            patch["enabled"] = bool(args["enabled"])
+        if (args.get("until") or "").strip():
+            patch["expires_at"] = _parse_vn(args["until"]).isoformat()
+
+        if not patch:
+            return _text(f"Không có gì để sửa. Prompt hiện tại của "
+                         f"'{row['name']}':\n\n{cur_prompt}")
+        res = (db.sb().table("scheduled_tasks").update(patch)
+               .eq("id", row["id"]).execute()).data[0]
+        changed = ", ".join(patch.keys())
+        return _text(f"Đã sửa lịch [{res['id'][:8]}] '{res['name']}' (đổi: {changed}).\n\n"
+                     f"PROMPT MỚI — đọc lại và xác nhận với người dùng:\n{res.get('prompt')}")
     except Exception as e:
         return _err(e)
 
@@ -967,7 +1052,7 @@ lark_server = create_sdk_mcp_server(
            notebooklm_ask, notebooklm_add_source, notebooklm_audio_overview,
            assignment_create, assignment_list, assignment_update,
            assignment_remind, assignment_notify_assigner,
-           schedule_create, schedule_list, schedule_delete,
+           schedule_create, schedule_list, schedule_update, schedule_delete,
            assignment_stats,
            decision_log, decision_list, decision_update,
            monitor_create, monitor_list, monitor_delete,

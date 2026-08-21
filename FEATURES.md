@@ -164,10 +164,16 @@ Pipeline đầy đủ (`meetings.py` + `events.py` + `transcribe.py` + `minutes_
 Kho `.md` trên **Lark Drive** (`Jenny-BOD-Memory/` + thư mục con `meetings/reports/market/knowledge/summaries` + INDEX).
 - **`memory_save`** (lưu + cập nhật INDEX), **`memory_index`** (đọc mục lục), **`memory_read`** (đọc 1 file theo token). Quy tắc **tra cứu 2 bước**: đọc INDEX → chọn file → mới đọc, để tiết kiệm token.
 
+### 4.12b. Kiểm thử chống tái diễn ⭐ *(thêm 2026-08-20)*
+- **`agent/tests/test_regressions.py`** — 15 test tự động, mỗi test gắn với **một sự cố thật đã xảy ra** trên production. Chạy: `cd agent && python -m pytest tests/ -q` (không cần Supabase/Lark thật — DB và API đều được thay bằng bản giả).
+  Phủ: sửa được prompt lịch định kỳ · chế độ delegate không rò nội dung họp · cả 3 cửa gỡ băng bị chặn · A2A chỉ duyệt bot chứ không duyệt người · sàn nhiễu chống báo động giả · `direction='down'` không báo khi campaign tăng · blackout ngày campaign · đọc Sheet cắt cột trống và escape `|`.
+- **`agent/tests/agent_tests.yaml`** — 10 test hành vi (chấm bằng người/agent đọc câu trả lời), khai trong `lsr-agent.yaml`. Mỗi case ghi rõ `must_call_tools` và `fail_if`, kèm mô tả sự cố gốc.
+
 ### 4.12. Báo cáo định kỳ & tự đặt lịch — Scheduler *(theo plan + mở rộng)*
 - `jenny-cron` chạy lịch trong bảng `scheduled_tasks` theo cron (giờ VN), gửi kết quả vào Lark/Telegram; hỗ trợ **trả vào đúng thread** (`chat_id#message_id`). Có **retry 1 lần** sau 60s, báo lỗi vào chat nếu thất bại.
 - **`schedule_create`** ⭐ *(ngoài plan)*: Jenny **tự đặt lịch định kỳ** từ hội thoại ("cập nhật doanh thu mỗi tiếng"). Hỗ trợ `thread_reply_to` (cập nhật vào đúng thread) và `until` (**hạn dừng** — "cập nhật đến 9pm hôm nay"). Đặt xong **chạy ngay 1 lần**, không chờ chu kỳ đầu.
-- **`schedule_list`** / **`schedule_delete`** (xóa hoặc chỉ tắt).
+- **`schedule_list`** / **`schedule_update`** ⭐ / **`schedule_delete`** (xóa hoặc chỉ tắt).
+- **`schedule_update`** ⭐: sửa prompt/cron/giờ của lịch đã có — `prompt_remove` bỏ một mục, `prompt_append` thêm mục, hoặc thay toàn bộ. **Bắt buộc dùng khi người dùng yêu cầu đổi nội dung báo cáo định kỳ**; trả về prompt mới để Jenny đọc lại và xác nhận. Không khớp đoạn cần xoá thì báo rõ thay vì im lặng.
 - **Hạn dừng `expires_at`** ⭐: scheduler tự tắt lịch khi quá hạn.
 
 ### 4.13. Nghiên cứu thị trường & web *(theo plan)*
@@ -230,7 +236,7 @@ Vòng lặp không công cụ nào trên thị trường làm đủ:
 | Tài nguyên | `search_resources`, `recent_resources`, `watch_document` |
 | Thành viên group ⭐ | `group_members` (liệt kê + open_id để tag, đánh dấu agent) |
 | Giao việc BOD | `assignment_create`, `assignment_list`, `assignment_update`, `assignment_remind`, `assignment_notify_assigner` |
-| Lịch định kỳ | `schedule_create`, `schedule_list`, `schedule_delete` |
+| Lịch định kỳ | `schedule_create`, `schedule_list`, **`schedule_update`** ⭐, `schedule_delete` |
 | Chỉ số cam kết ⭐ | `assignment_stats` |
 | Sổ quyết định ⭐ | `decision_log`, `decision_list`, `decision_update` |
 | Giám sát số liệu ⭐ | `monitor_create`, `monitor_list`, `monitor_delete` |
@@ -272,7 +278,7 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 `persona`, `company_instructions`, `reply_rules` (trigger_names…), `bq_data_dictionary` (project_id + link wiki), `internal_docs`, `drive_memory_folder` / `lark_memory`, `notebooklm`, `transcribe_server`, `lark_admin_ids`, `lark_p2p_partners`, `lark_p2p_map`, `lark_known_threads`, `bod_members`, `meeting_authorized_ids`, `org_sync` / `org_chart_file`, `doc_comment_cursor`, `lark_user_token`.
 
-Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `typing` ⭐ (react OK thay tin chờ) · `known_agents` ⭐ (đánh dấu tài khoản agent) · `peer_agents` ⭐ (danh bạ agent để hỏi) · `meeting_notes` ⭐ (delegate/self) · `a2a_allowed_agents` ⭐ (agent được phép hỏi Jenny) · `capability_announce` ⭐.
+Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `typing` ⭐ (react OK thay tin chờ) · `known_agents` ⭐ (đánh dấu tài khoản agent) · `peer_agents` ⭐ (danh bạ agent để hỏi) · `meeting_notes` ⭐ (delegate/self) · `a2a_allowed_agents` ⭐ (`allow_all` — đang MỞ cho mọi agent trong platform) · `capability_announce` ⭐.
 
 **Skills đang có**: `web-research` ✅, `bigquery-analytics` ✅, `internal-knowledge` ✅, `memory`, `decision-support` ⭐, `proactive-monitoring` ⭐ (kèm các skill nghiệp vụ bổ sung trên Supabase). Thêm/bật/tắt skill từ dashboard → Jenny nạp lại ở phiên mới.
 
