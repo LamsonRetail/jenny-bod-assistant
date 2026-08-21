@@ -42,32 +42,40 @@ def _parse_text(msg: dict) -> str:
     return text.strip()
 
 
-_last_placeholder: dict[str, float] = {}
+def _typing_cfg() -> dict:
+    """config `typing` — dấu 'đã nhận, đang xử lý'.
 
-
-def _placeholder_cfg() -> dict:
-    """config `placeholder` — tin '⏳ đang xử lý'."""
-    cfg = db.all_configs().get("placeholder", {}) or {}
+    mode='reaction' (mặc định): thả emoji lên chính tin của người hỏi. Nhẹ hơn hẳn
+    cách cũ (gửi tin '⏳ đang xử lý' rồi thu hồi): không thêm tin vào chat, không cần
+    cooldown chống rác, không có tin nào kịp hiện rồi biến mất.
+    mode='off': không báo gì.
+    """
+    cfg = db.all_configs().get("typing", {}) or {}
     return {
-        "enabled": cfg.get("enabled", True),
-        # Hỏi liên tục trong khoảng này thì KHÔNG gửi lại tin chờ (đỡ rác chat)
-        "cooldown_sec": int(cfg.get("cooldown_sec", 180)),
-        "text": cfg.get("text", "⏳ Em đang xử lý, chờ em chút nhé…"),
+        "mode": (cfg.get("mode") or "reaction").lower(),
+        "emoji": cfg.get("emoji") or "OK",       # phải VIẾT HOA: OK, DONE, THUMBSUP…
+        "remove_after_reply": bool(cfg.get("remove_after_reply", False)),
     }
 
 
-def _should_send_placeholder(key: str, cfg: dict) -> bool:
-    if not cfg["enabled"]:
-        return False
-    now = time.time()
-    last = _last_placeholder.get(key, 0.0)
-    if now - last < cfg["cooldown_sec"]:
-        return False
-    _last_placeholder[key] = now
-    if len(_last_placeholder) > 500:          # giới hạn bộ nhớ
-        for k in sorted(_last_placeholder, key=_last_placeholder.get)[:200]:
-            _last_placeholder.pop(k, None)
-    return True
+def _react_ack(message_id: str, cfg: dict) -> str:
+    """Thả emoji báo đã nhận. Lỗi thì bỏ qua — không được chặn việc trả lời."""
+    if not message_id or cfg["mode"] != "reaction":
+        return ""
+    try:
+        return lark_user.add_reaction(message_id, cfg["emoji"])
+    except Exception as e:
+        log.warning("Không thả được reaction lên %s: %s", message_id, e)
+        return ""
+
+
+def _unreact(message_id: str, reaction_id: str) -> None:
+    if not (message_id and reaction_id):
+        return
+    try:
+        lark_user.delete_reaction(message_id, reaction_id)
+    except Exception as e:
+        log.debug("Không xoá được reaction: %s", e)
 
 
 def _voice_cfg() -> dict:
@@ -79,16 +87,6 @@ def _voice_cfg() -> dict:
         "group_requires_reply": cfg.get("group_requires_reply", True),
         "echo_transcript": cfg.get("echo_transcript", True),
     }
-
-
-def _recall(message_id: str) -> None:
-    """Thu hồi tin chờ. Thất bại thì bỏ qua — không được chặn việc trả lời."""
-    if not message_id:
-        return
-    try:
-        lark_user.recall_message(message_id)
-    except Exception as e:
-        log.warning("Không thu hồi được tin chờ %s: %s", message_id, e)
 
 
 def _voice_transcript(chat: dict, msg: dict, in_thread: bool) -> str:
@@ -337,16 +335,10 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
         _say(_cached["answer"])
         return
 
-    # "Typing indicator": gửi tin chờ, xong thì THU HỒI rồi gửi câu trả lời mới
-    # (phải gửi tin mới chứ không sửa tin cũ, vì tin đã sửa không tag được người hỏi).
-    # Hỏi liên tục thì bỏ tin chờ để không rác chat.
-    placeholder_id = ""
-    ph_cfg = _placeholder_cfg()
-    if _should_send_placeholder(f"{chat_id}:{sender_id}", ph_cfg):
-        try:
-            placeholder_id = _say(ph_cfg["text"])
-        except Exception:
-            log.warning("Không gửi được tin chờ")
+    # Dấu "đã nhận, đang xử lý": thả emoji lên chính tin của người hỏi.
+    ty_cfg = _typing_cfg()
+    ack_msg_id = msg.get("message_id", "")
+    ack_reaction_id = _react_ack(ack_msg_id, ty_cfg)
 
     # Hồ sơ người hỏi (từ danh bạ tổ chức + ghi chú tự học)
     sender_name, sender_context = sender_id or "Người dùng", ""
@@ -397,7 +389,7 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
             allowed_tools=policy.allowed_tools(agent.ALLOWED_TOOLS, can_assign=can_assign))
     except Exception:
         log.exception("agent.run failed")
-        _recall(placeholder_id)
+        _unreact(ack_msg_id, ack_reaction_id)   # bỏ dấu OK vì đã không xử lý được
         _say("Em gặp lỗi khi xử lý, anh/chị thử lại giúp em nhé.", mention=True)
         return
 
@@ -411,10 +403,11 @@ async def _handle_message(chat: dict, msg: dict, my_open_id: str,
     if is_voice and _voice_cfg()["echo_transcript"]:
         display = f"🎤 Em nghe: «{text[:300]}»\n\n{reply.text}"
     first, rest = display[:9000], display[9000:]
-    _recall(placeholder_id)          # xoá tin chờ trước khi trả lời
     _say(first, mention=True)
     if rest:
         _say(rest)
+    if ty_cfg["remove_after_reply"]:            # mặc định GIỮ dấu OK làm vết "đã xem"
+        _unreact(ack_msg_id, ack_reaction_id)
 
 
 def _p2p_chats() -> list[dict]:

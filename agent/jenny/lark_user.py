@@ -244,8 +244,27 @@ def send_text(chat_id: str, text: str,
 
 
 def recall_message(message_id: str) -> None:
-    """Thu hồi tin nhắn Jenny đã gửi (dùng để xoá tin '⏳ đang xử lý')."""
+    """Thu hồi tin nhắn Jenny đã gửi."""
     _delete(f"/im/v1/messages/{message_id}")
+
+
+def add_reaction(message_id: str, emoji: str = "OK") -> str:
+    """Thả emoji lên 1 tin nhắn — dùng làm dấu 'đã nhận, đang xử lý'.
+
+    Nhẹ hơn hẳn việc gửi tin chờ rồi thu hồi: không thêm tin vào chat, không cần
+    xoá, và người gửi thấy ngay là Jenny đã nhận. Trả về reaction_id để xoá nếu cần.
+    """
+    data = _post(f"/im/v1/messages/{message_id}/reactions",
+                 {"reaction_type": {"emoji_type": emoji}})
+    return (data.get("reaction_id") or "")
+
+
+def delete_reaction(message_id: str, reaction_id: str) -> None:
+    _delete(f"/im/v1/messages/{message_id}/reactions/{reaction_id}")
+
+
+def list_reactions(message_id: str) -> list[dict]:
+    return (_get(f"/im/v1/messages/{message_id}/reactions").get("items") or [])
 
 
 _members_cache: dict[str, tuple[float, list[dict]]] = {}

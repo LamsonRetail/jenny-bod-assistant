@@ -78,7 +78,7 @@ Trợ lý AI cho Ban điều hành (BOD) công ty **LSR (Lamson Retail)**. Jenny
   - **Tag theo tên — cả người và BOT** ⭐: tool `group_members(chat_id, keyword)` trả về `open_id` để tag; Jenny chèn `<at user_id="ou_…">` vào câu trả lời.
     Người thật lấy từ API thành viên. **Bot app lấy từ sổ đăng ký `chat_mentionables`** mà Jenny tự học — vì API Lark **không** liệt kê bot: `member_id_type` chỉ nhận `user_id/union_id/open_id` (không có `app_id`) và `/members/bot` trả 404. Nhưng **bot app vẫn có `open_id` dạng `ou_…` và vẫn tag được bình thường** — id đó nằm trong mảng `mentions` của các tin đã từng tag chúng.
     Cơ chế học: bắt **thụ động** mỗi khi poller thấy tin có mention · **quét lịch sử** khi chưa có sổ cho chat đó (hoặc gọi `discover=true`) · **quét lại mỗi 24h** trong scheduler. Quét từ mới đến cũ nên luôn giữ **tên mới nhất** (bot hay bị đổi tên).
-  - **Tin chờ "⏳ Em đang xử lý…"**: gửi khi bắt đầu xử lý, **thu hồi (recall) rồi gửi câu trả lời mới** khi xong — phải gửi tin mới chứ không sửa tin cũ, vì tin đã sửa không tạo được thông báo tag. **Hỏi liên tục** trong khoảng cooldown (mặc định 180s) thì bỏ tin chờ để không rác chat. Config `placeholder`.
+  - **Dấu "đã nhận" = thả emoji `OK` lên chính tin của người hỏi** ⭐ *(đổi 2026-08-20)*. Thay hẳn cách cũ (gửi tin "⏳ Em đang xử lý…" rồi thu hồi). Nhẹ hơn hẳn: **không thêm tin nào vào chat**, không cần cooldown chống rác, và không còn cảnh tin hiện lên rồi biến mất. Mặc định **giữ** dấu OK sau khi trả lời như vết "đã xem"; `agent.run` lỗi thì **bỏ** dấu OK cho khỏi hiểu sai là đã xử lý xong. Config `typing`: `mode` (`reaction`|`off`), `emoji` (phải VIẾT HOA — `OK`/`DONE`/`THUMBSUP`), `remove_after_reply`.
   - **Chống lặp tuyệt đối**: mỗi `message_id` chỉ xử lý 1 lần (dedup có giới hạn bộ nhớ), cursor luôn tiến — tránh trả lời trùng.
 - **Ngữ cảnh người hỏi**: mỗi tin nhắn Jenny tự đính kèm hồ sơ người gửi (chức danh, phòng ban, ghi chú đã học), cờ **thành viên BOD**, và **các việc đang được giao** cho người đó → điều chỉnh câu trả lời theo vai trò.
 
@@ -272,7 +272,7 @@ Sửa các key này trên dashboard/Supabase là đổi hành vi **không cần 
 
 `persona`, `company_instructions`, `reply_rules` (trigger_names…), `bq_data_dictionary` (project_id + link wiki), `internal_docs`, `drive_memory_folder` / `lark_memory`, `notebooklm`, `transcribe_server`, `lark_admin_ids`, `lark_p2p_partners`, `lark_p2p_map`, `lark_known_threads`, `bod_members`, `meeting_authorized_ids`, `org_sync` / `org_chart_file`, `doc_comment_cursor`, `lark_user_token`.
 
-Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `placeholder` ⭐ (tin chờ + cooldown) · `known_agents` ⭐ (đánh dấu tài khoản agent) · `peer_agents` ⭐ (danh bạ agent để hỏi) · `meeting_notes` ⭐ (delegate/self) · `a2a_allowed_agents` ⭐ (agent được phép hỏi Jenny) · `capability_announce` ⭐.
+Đợt 1–2 bổ sung: `voice_note` ⭐ · `anomaly_defaults` ⭐ (giờ im lặng, ngày blackout, sàn nhiễu) · `assignment_chase` ⭐ · `typing` ⭐ (react OK thay tin chờ) · `known_agents` ⭐ (đánh dấu tài khoản agent) · `peer_agents` ⭐ (danh bạ agent để hỏi) · `meeting_notes` ⭐ (delegate/self) · `a2a_allowed_agents` ⭐ (agent được phép hỏi Jenny) · `capability_announce` ⭐.
 
 **Skills đang có**: `web-research` ✅, `bigquery-analytics` ✅, `internal-knowledge` ✅, `memory`, `decision-support` ⭐, `proactive-monitoring` ⭐ (kèm các skill nghiệp vụ bổ sung trên Supabase). Thêm/bật/tắt skill từ dashboard → Jenny nạp lại ở phiên mới.
 
