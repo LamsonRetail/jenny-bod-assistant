@@ -60,6 +60,46 @@ async def read_lark_document(args: dict) -> dict:
     return _text(content or "(tài liệu trống)")
 
 
+@tool("write_lark_document",
+      "GHI nội dung vào tài liệu Lark (docx). mode='create': tạo tài liệu MỚI, cần "
+      "`title`; mode='append': ghi thêm vào cuối tài liệu có sẵn, cần `url`. "
+      "markdown: nội dung — hỗ trợ #/##/### tiêu đề, - gạch đầu dòng, 1. danh số, "
+      "> trích dẫn, ``` khối code, --- đường kẻ, - [ ] việc cần làm. "
+      "Chỉ cần tài khoản Jenny có quyền sửa tài liệu đó (được share quyền edit), KHÔNG "
+      "cần add bot. Dùng khi người dùng nhờ 'viết vào file này', 'tạo tài liệu tổng hợp', "
+      "'lưu brief thành doc'. LUÔN trả link cho người dùng sau khi ghi. "
+      "Bảng markdown sẽ thành từng dòng chữ (Lark docx không có block bảng) — cần bảng "
+      "thật thì nói người dùng dùng Sheet.",
+      {"mode": str, "title": str, "url": str, "markdown": str})
+async def write_lark_document(args: dict) -> dict:
+    try:
+        from . import lark_user
+        md = args.get("markdown") or ""
+        if not md.strip():
+            return _text("Thiếu nội dung markdown cần ghi.")
+        mode = (args.get("mode") or "").strip().lower()
+        if not mode:
+            mode = "append" if (args.get("url") or "").strip() else "create"
+
+        if mode == "create":
+            title = (args.get("title") or "").strip()
+            if not title:
+                return _text("mode='create' cần `title` cho tài liệu mới.")
+            doc = lark_user.create_document(title)
+            n = lark_user.append_markdown(doc["document_id"], md)
+            return _text(f"Đã tạo tài liệu '{title}' và ghi {n} khối nội dung.\n"
+                         f"Link: {doc['url']}")
+        if mode == "append":
+            url = (args.get("url") or "").strip()
+            if not url:
+                return _text("mode='append' cần `url` tài liệu đích.")
+            n = lark_user.append_markdown(url, md)
+            return _text(f"Đã ghi thêm {n} khối nội dung vào cuối tài liệu.\nLink: {url}")
+        return _text("mode phải là 'create' hoặc 'append'.")
+    except Exception as e:
+        return _err(e)
+
+
 # ---------- Lịch họp ----------
 
 @tool("calendar_list_events",
@@ -526,11 +566,14 @@ async def schedule_create(args: dict) -> dict:
       "nếu truyền (bỏ trống = tất cả).", {"chat_id": str})
 async def schedule_list(args: dict) -> dict:
     try:
-        q = db.sb().table("scheduled_tasks").select("*").order("created_at")
-        cid = (args.get("chat_id") or "").strip()
+        rows = (db.sb().table("scheduled_tasks").select("*")
+                .order("created_at").execute().data)
+        cid = (args.get("chat_id") or "").split("#", 1)[0].strip()
         if cid:
-            q = q.eq("chat_id", cid)
-        rows = q.execute().data
+            # Lịch trả kết quả vào THREAD có chat_id dạng "oc_xxx#om_yyy" — so sánh
+            # bằng phần chat trước dấu '#', nếu không sẽ bỏ sót đúng những lịch đó.
+            rows = [r for r in rows
+                    if (r.get("chat_id") or "").split("#", 1)[0] == cid]
         if not rows:
             return _text("Chưa có lịch chạy nào.")
         return _text("\n".join(
@@ -1041,7 +1084,7 @@ async def memory_read(args: dict) -> dict:
 
 lark_server = create_sdk_mcp_server(
     name="lark", version="1.0.0",
-    tools=[read_lark_document,
+    tools=[read_lark_document, write_lark_document,
            calendar_list_events, calendar_create_event, calendar_delete_event,
            task_create, task_list, task_complete,
            send_lark_message,

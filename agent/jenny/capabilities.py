@@ -71,14 +71,17 @@ CAPABILITIES: list[dict] = [
     },
     {
         "id": "document_read",
-        "name": "Đọc tài liệu Lark",
-        "description": "Đọc wiki, docx, Base và Sheet (bảng tính) bằng quyền tài khoản "
-                       "Jenny; trả về nội dung dạng chữ/bảng markdown.",
-        "inputs": "Link tài liệu Lark",
-        "outputs": "Nội dung tài liệu (bảng tính trả theo từng trang)",
-        "example": "Đọc giúp file bảng tính S&OP này và tóm tắt phần Mate Made.",
-        "limits": "File phải được share cho account Jenny. Bảng tính giới hạn "
-                  "200 dòng × 30 cột × 8 trang mỗi lần đọc.",
+        "name": "Đọc và GHI tài liệu Lark",
+        "description": "Đọc wiki, docx, Base và Sheet (bảng tính); và GHI nội dung vào "
+                       "tài liệu docx — tạo tài liệu mới hoặc ghi thêm vào cuối tài liệu "
+                       "có sẵn (tiêu đề, gạch đầu dòng, danh số, trích dẫn, khối code, "
+                       "việc cần làm).",
+        "inputs": "Link tài liệu Lark (đọc); hoặc tiêu đề + nội dung markdown (ghi)",
+        "outputs": "Nội dung tài liệu; hoặc link tài liệu đã ghi",
+        "example": "Tổng hợp brief này thành một tài liệu Lark rồi gửi link cho anh.",
+        "limits": "File phải được share cho account Jenny (ghi thì cần quyền edit). "
+                  "Bảng tính giới hạn 200 dòng × 30 cột × 8 trang mỗi lần đọc. "
+                  "Docx không có block bảng — cần bảng thật thì dùng Sheet.",
     },
     {
         "id": "assignment_tracking",

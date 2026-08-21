@@ -93,6 +93,8 @@ Trợ lý AI cho Ban điều hành (BOD) công ty **LSR (Lamson Retail)**. Jenny
 
 ### 4.2. Tài liệu & tri thức nội bộ Lark *(theo plan)*
 - **`read_lark_document`**: đọc **wiki · docx · base · Sheet (bảng tính)** ⭐ bằng quyền tài khoản Jenny (không dùng WebFetch với link Lark — sẽ bị chặn đăng nhập). Chỉ cần file được **share cho account Jenny, không cần add bot**.
+- **`write_lark_document`** ⭐ *(thêm 2026-08-21)*: **GHI** nội dung vào docx — `mode=create` tạo tài liệu mới, `mode=append` ghi thêm vào cuối tài liệu có sẵn. Markdown → block Lark: tiêu đề (`#`/`##`/`###`), gạch đầu dòng, danh số, trích dẫn, khối code, đường kẻ, việc cần làm (`- [x]`). Tự bỏ dấu markdown inline nên không lọt `**` hay backtick vào tài liệu; gửi theo lô 40 block + retry vì API hay rate-limit khi gọi dồn. Docx **không có block bảng** — cần bảng thật thì dùng Sheet.
+  Link tài liệu lấy từ config `lark_url_prefix` (Jenny **tự dò một lần** rồi lưu lại) — không suy ra từ `LARK_DOMAIN` vì đó là domain API, dùng sẽ ra link mở không được.
 - **Bảng tính (Sheet)** ⭐: đọc qua `sheets/v3/…/sheets/query` (danh sách trang) + `sheets/v2/…/values/{range}` (dữ liệu), trả về **bảng markdown theo từng trang**. Giới hạn 200 dòng × 30 cột mỗi trang, 8 trang; bị cắt thì ghi rõ tổng số dòng. Tự **bỏ dòng và cột trống ở cuối** (lưới sheet mặc định rộng 20+ cột — in hết vừa rác vừa tốn token), bỏ qua trang ẩn, và làm phẳng ô dạng link/mention thành chữ.
 - Skill `internal-knowledge`: trả lời theo tài liệu khai trong config `internal_docs`; chưa có thì nói rõ, không suy đoán.
 
@@ -229,7 +231,7 @@ Vòng lặp không công cụ nào trên thị trường làm đủ:
 
 | Nhóm | Tools |
 |---|---|
-| Tài liệu | `read_lark_document` |
+| Tài liệu | `read_lark_document`, `write_lark_document` ⭐ |
 | Lịch | `calendar_list_events`, `calendar_create_event`, `calendar_delete_event` |
 | Task | `task_create`, `task_list`, `task_complete` |
 | Tin nhắn | `send_lark_message` |

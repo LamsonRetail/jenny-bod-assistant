@@ -311,3 +311,69 @@ def test_khong_co_duong_nao_thi_bao_ro_ca_hai(fake_db):
     res = peers.ask("mino", "x")
     assert res["status"] == "error"
     assert "platform_a2a" in res["error"] and "chat_id" in res["error"]
+
+
+# ---------- Sự cố 6: lịch trả vào thread bị schedule_list bỏ sót ----------
+# Lịch trả kết quả vào thread có chat_id dạng "oc_xxx#om_yyy"; lọc theo chat_id thuần
+# sẽ không khớp → Jenny báo "chat này không có lịch nào" trong khi vẫn có.
+
+def test_schedule_list_thay_ca_lich_tra_vao_thread(fake_db):
+    from jenny import lark_tools
+    fake_db.store["scheduled_tasks"] = [
+        {"id": "aaa11111-0000-0000-0000-000000000000", "name": "Lịch chat thường",
+         "cron": "0 8 * * *", "enabled": True, "channel": "lark",
+         "chat_id": "oc_abc", "prompt": "x"},
+        {"id": "bbb22222-0000-0000-0000-000000000000", "name": "Lịch trong thread",
+         "cron": "0 * * * *", "enabled": True, "channel": "lark",
+         "chat_id": "oc_abc#om_thread1", "prompt": "y"},
+        {"id": "ccc33333-0000-0000-0000-000000000000", "name": "Lịch chat khác",
+         "cron": "0 9 * * *", "enabled": True, "channel": "lark",
+         "chat_id": "oc_khac", "prompt": "z"}]
+    out = _call(lark_tools.schedule_list, {"chat_id": "oc_abc"})
+    assert "Lịch chat thường" in out
+    assert "Lịch trong thread" in out, "bỏ sót lịch trả vào thread của cùng chat"
+    assert "Lịch chat khác" not in out, "lọt lịch của chat khác"
+
+
+# ---------- Sự cố 7: Jenny không ghi được nội dung vào tài liệu ----------
+
+def test_co_tool_ghi_tai_lieu_va_duoc_cap_quyen():
+    from jenny import agent, lark_tools
+    assert hasattr(lark_tools, "write_lark_document"), "thiếu tool ghi tài liệu"
+    assert "mcp__lark__write_lark_document" in agent.ALLOWED_TOOLS
+
+
+def test_markdown_chuyen_thanh_block_dung_loai():
+    from jenny import lark_user
+    blocks = lark_user._md_to_blocks(
+        "# H1\n## H2\n### H3\n- bullet\n1. ordered\n> quote\n---\n"
+        "- [x] xong\n- [ ] chưa\n```\ncode here\n```\nđoạn văn")
+    types = [b["block_type"] for b in blocks]
+    assert types.count(3) == 1 and types.count(4) == 1 and types.count(5) == 1, types
+    assert 12 in types and 13 in types and 15 in types, "thiếu bullet/ordered/quote"
+    assert 22 in types, "thiếu divider"
+    assert types.count(17) == 2, "thiếu todo"
+    assert 14 in types, "thiếu code block"
+    assert 2 in types, "thiếu đoạn văn thường"
+    done = [b["todo"]["style"]["done"] for b in blocks if b["block_type"] == 17]
+    assert done == [True, False], "trạng thái tick của todo sai"
+
+
+def test_bo_dau_markdown_inline_khong_de_lot_ky_tu_tho():
+    from jenny import lark_user
+    blocks = lark_user._md_to_blocks("- Hapas **2,6 tỷ** kênh `online` xem [đây](http://x)")
+    content = blocks[0]["bullet"]["elements"][0]["text_run"]["content"]
+    assert "**" not in content and "`" not in content, content
+    assert "2,6 tỷ" in content and "online" in content
+    assert "đây (http://x)" in content, "link phải thành 'chữ (url)'"
+
+
+def test_link_tai_lieu_khong_dung_domain_api(fake_db, monkeypatch):
+    """LARK_DOMAIN là domain API (open.larksuite.com) — không được dùng làm link doc."""
+    from jenny import lark_user
+    fake_db.configs["lark_url_prefix"] = {"url": "https://tenant.sg.larksuite.com"}
+    monkeypatch.setattr(lark_user, "_post",
+                        lambda p, b=None, **k: {"document": {"document_id": "DOC123"}})
+    doc = lark_user.create_document("X")
+    assert doc["url"] == "https://tenant.sg.larksuite.com/docx/DOC123"
+    assert "open.larksuite.com" not in doc["url"]

@@ -44,7 +44,7 @@ def _lark_server():
 ALLOWED_TOOLS = ["WebSearch", "WebFetch",
                  "mcp__bq__get_data_dictionary", "mcp__bq__bq_query",
                  "mcp__bq__bq_recent_queries", "mcp__bq__anomaly_recent",
-                 "mcp__lark__read_lark_document",
+                 "mcp__lark__read_lark_document", "mcp__lark__write_lark_document",
                  "mcp__lark__calendar_list_events", "mcp__lark__calendar_create_event",
                  "mcp__lark__calendar_delete_event",
                  "mcp__lark__task_create", "mcp__lark__task_list", "mcp__lark__task_complete",

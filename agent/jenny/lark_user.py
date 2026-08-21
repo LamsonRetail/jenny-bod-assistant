@@ -535,8 +535,13 @@ def users_in_department(open_department_id: str) -> list[dict]:
             return items
 
 
-def delete_drive_file(file_token: str) -> None:
-    _delete(f"/drive/v1/files/{file_token}?type=file")
+def delete_drive_file(file_token: str, file_type: str = "file") -> None:
+    """Xoá file trên Drive. file_type: file | docx | sheet | bitable | folder…
+
+    Phải truyền đúng loại, không thì Lark từ chối (mặc định 'file' chỉ đúng cho file
+    tải lên, không đúng cho tài liệu/bảng tính).
+    """
+    _delete(f"/drive/v1/files/{file_token}?type={file_type}")
 
 
 # ---------- Calendar (lịch của account Jenny + lịch được share) ----------
@@ -796,6 +801,153 @@ def _read_sheet(token: str) -> str:
     if len(tabs) > SHEET_MAX_TABS:
         out.append(f"\n_(còn {len(tabs) - SHEET_MAX_TABS} trang nữa chưa đọc)_")
     return "\n".join(out)
+
+
+def _doc_token(url_or_token: str) -> str:
+    """Lấy document_id từ link docx / wiki / token trần."""
+    import re
+    m = re.search(r"/(wiki|docx|docs)/([A-Za-z0-9]+)", url_or_token)
+    if not m:
+        return url_or_token.strip()
+    kind, token = m.group(1), m.group(2)
+    if kind == "wiki":
+        node = _get("/wiki/v2/spaces/get_node", {"token": token}).get("node", {})
+        return node.get("obj_token", token)
+    return token
+
+
+def _inline(text: str) -> str:
+    """Bỏ dấu markdown inline để không hiện literal ** hay ` trong tài liệu."""
+    import re
+    text = re.sub(r"\*\*(.+?)\*\*", r"\1", text)
+    text = re.sub(r"(?<!\w)\*(.+?)\*(?!\w)", r"\1", text)
+    text = re.sub(r"`(.+?)`", r"\1", text)
+    text = re.sub(r"\[(.+?)\]\((.+?)\)", r"\1 (\2)", text)
+    return text
+
+
+def _md_to_blocks(markdown: str) -> list[dict]:
+    """Markdown → block docx của Lark.
+
+    Hỗ trợ: # ## ### (heading), - * (bullet), 1. (ordered), > (quote),
+    ``` (code), --- (divider), - [ ] / - [x] (todo), còn lại là đoạn văn.
+    Bảng markdown giữ nguyên từng dòng dạng text (Lark không có block bảng đơn giản).
+    """
+    import re
+
+    def t(s: str) -> dict:
+        return {"elements": [{"text_run": {"content": _inline(s)}}], "style": {}}
+
+    blocks: list[dict] = []
+    in_code, code_buf = False, []
+    for raw in (markdown or "").splitlines():
+        line = raw.rstrip()
+        if line.strip().startswith("```"):
+            if in_code:
+                blocks.append({"block_type": 14, "code": t("\n".join(code_buf))})
+                code_buf, in_code = [], False
+            else:
+                in_code = True
+            continue
+        if in_code:
+            code_buf.append(raw)
+            continue
+        s = line.strip()
+        if not s:
+            continue
+        if re.fullmatch(r"-{3,}|\*{3,}|_{3,}", s):
+            blocks.append({"block_type": 22, "divider": {}})
+        elif m := re.match(r"^(#{1,6})\s+(.*)", s):
+            lvl = min(len(m.group(1)), 3)
+            blocks.append({"block_type": 2 + lvl, f"heading{lvl}": t(m.group(2))})
+        elif m := re.match(r"^[-*]\s+\[( |x|X)\]\s+(.*)", s):
+            blocks.append({"block_type": 17,
+                           "todo": {**t(m.group(2)),
+                                    "style": {"done": m.group(1).lower() == "x"}}})
+        elif m := re.match(r"^[-*+]\s+(.*)", s):
+            blocks.append({"block_type": 12, "bullet": t(m.group(1))})
+        elif m := re.match(r"^\d+[.)]\s+(.*)", s):
+            blocks.append({"block_type": 13, "ordered": t(m.group(1))})
+        elif m := re.match(r"^>\s?(.*)", s):
+            blocks.append({"block_type": 15, "quote": t(m.group(1))})
+        else:
+            blocks.append({"block_type": 2, "text": t(s)})
+    if code_buf:
+        blocks.append({"block_type": 14, "code": t("\n".join(code_buf))})
+    return blocks
+
+
+DOC_CHUNK = 40          # số block mỗi lần gọi API (gửi lô để tránh rate limit)
+
+
+def doc_url_prefix() -> str:
+    """Tiền tố URL tài liệu của tenant, ví dụ https://abc123.sg.larksuite.com.
+
+    KHÔNG suy ra được từ LARK_DOMAIN (đó là domain API open.larksuite.com) — tenant có
+    subdomain riêng. Lưu ở config `lark_url_prefix`; chưa có thì tự dò một lần bằng cách
+    tạo tạm 1 bảng tính (API sheets trả sẵn `url`) rồi xoá đi.
+    """
+    cfg = db.all_configs().get("lark_url_prefix", {}) or {}
+    pre = (cfg.get("url") or "").rstrip("/")
+    if pre:
+        return pre
+    try:
+        sp = _post("/sheets/v3/spreadsheets", {"title": "jenny-url-probe"}) \
+            .get("spreadsheet", {})
+        url, token = sp.get("url", ""), sp.get("spreadsheet_token", "")
+        if token:
+            try:
+                delete_drive_file(token, "sheet")
+            except Exception:
+                log.warning("Không xoá được file dò URL %s", token)
+        if "/sheets/" in url:
+            pre = url.split("/sheets/")[0].rstrip("/")
+            db.sb().table("configs").upsert({
+                "key": "lark_url_prefix", "value": {"url": pre},
+                "description": "Tiền tố URL tài liệu của tenant Lark (Jenny tự dò)",
+            }, on_conflict="key").execute()
+            log.info("Đã dò được tiền tố URL tài liệu: %s", pre)
+            return pre
+    except Exception:
+        log.exception("Không dò được tiền tố URL tài liệu")
+    return ""
+
+
+def create_document(title: str, folder_token: str = "") -> dict:
+    """Tạo tài liệu docx mới. Trả {document_id, url}."""
+    body: dict = {"title": title}
+    if folder_token:
+        body["folder_token"] = folder_token
+    doc = _post("/docx/v1/documents", body).get("document", {})
+    did = doc.get("document_id", "")
+    pre = doc_url_prefix()
+    return {"document_id": did,
+            # Không dò được tenant domain thì dùng applink — vẫn mở được trong app Lark
+            "url": (f"{pre}/docx/{did}" if pre else
+                    f"https://applink.larksuite.com/client/docs/open?docToken={did}")}
+
+
+def append_markdown(url_or_token: str, markdown: str) -> int:
+    """Ghi thêm nội dung markdown vào cuối 1 tài liệu docx. Trả số block đã thêm."""
+    did = _doc_token(url_or_token)
+    blocks = _md_to_blocks(markdown)
+    if not blocks:
+        return 0
+    added = 0
+    for i in range(0, len(blocks), DOC_CHUNK):
+        chunk = blocks[i:i + DOC_CHUNK]
+        for attempt in (1, 2, 3):        # API hay trả rỗng/429 khi gọi dồn
+            try:
+                _post(f"/docx/v1/documents/{did}/blocks/{did}/children",
+                      {"children": chunk, "index": -1})
+                added += len(chunk)
+                break
+            except Exception as e:
+                if attempt == 3:
+                    raise RuntimeError(
+                        f"ghi được {added}/{len(blocks)} block rồi lỗi: {e}") from e
+                time.sleep(1.5 * attempt)
+    return added
 
 
 def read_document(url_or_token: str) -> str:
