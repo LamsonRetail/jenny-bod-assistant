@@ -49,21 +49,122 @@ def _text_of(msg: dict) -> str:
     return ""
 
 
+def _platform_cfg() -> dict:
+    """config `platform_a2a` — gọi agent khác qua API của LSR platform.
+
+    Đây là đường ĐÚNG (không cần Jenny vào chat Lark của agent kia), nhưng hiện Caddy
+    của platform chặn 403 mọi path ngoài /health, /v1/traces, /v1/policy/check. Khi
+    platform mở endpoint A2A, chỉ cần khai config này là chạy — không phải sửa code:
+
+      {"enabled": true,
+       "url": "https://platform.…/v1/a2a/{agent}/ask",   # {agent} sẽ được thay
+       "method": "POST",
+       "auth": "bearer_telemetry",        # dùng LSR_TELEMETRY_API_KEY, hoặc "none"
+       "headers": {},
+       "body": {"question": "{question}", "from": "{from_agent}"},
+       "answer_field": "answer",          # đường dẫn tới câu trả lời, vd "data.reply"
+       "timeout_sec": 120}
+    """
+    return db.all_configs().get("platform_a2a", {}) or {}
+
+
+def _dig(obj, path: str):
+    cur = obj
+    for part in (path or "").split("."):
+        if not part:
+            continue
+        if isinstance(cur, dict):
+            cur = cur.get(part)
+        else:
+            return None
+    return cur
+
+
+def _ask_platform(peer: dict, question: str, cfg: dict) -> dict:
+    """Hỏi agent khác qua API platform. Đồng bộ, trả cùng cấu trúc với _ask_lark."""
+    import json as _json
+    import os
+    import urllib.error
+    import urllib.request
+
+    url = (cfg.get("url") or "").replace("{agent}", peer["name"])
+    if not url:
+        return {"status": "error", "agent": peer["name"],
+                "error": "config `platform_a2a.url` chưa khai."}
+    body = _json.loads(
+        _json.dumps(cfg.get("body") or {"question": "{question}"})
+        .replace("{question}", _json.dumps(question)[1:-1])
+        .replace("{from_agent}", os.environ.get("LSR_AGENT_ID", "AG-JENNY-BOD")))
+    headers = {"Content-Type": "application/json", **(cfg.get("headers") or {})}
+    if (cfg.get("auth") or "bearer_telemetry") == "bearer_telemetry":
+        key = os.environ.get("LSR_TELEMETRY_API_KEY", "")
+        if key:
+            headers["Authorization"] = f"Bearer {key}"
+
+    req = urllib.request.Request(
+        url, data=_json.dumps(body, ensure_ascii=False).encode(),
+        headers=headers, method=(cfg.get("method") or "POST").upper())
+    try:
+        with urllib.request.urlopen(req, timeout=float(cfg.get("timeout_sec") or 120)) as r:
+            raw = r.read().decode("utf-8", errors="replace")
+    except urllib.error.HTTPError as e:
+        detail = e.read()[:200].decode("utf-8", errors="replace")
+        hint = ""
+        if e.code == 403:
+            hint = (" — platform đang chặn ở proxy (Caddy). Cần đội platform mở path A2A "
+                    "cho agent token, hoặc khai lại `platform_a2a.auth`.")
+        return {"status": "error", "agent": peer["name"],
+                "error": f"platform trả {e.code}: {detail}{hint}"}
+    except Exception as exc:
+        return {"status": "error", "agent": peer["name"],
+                "error": f"không gọi được platform: {exc}"}
+
+    try:
+        data = _json.loads(raw)
+        answer = _dig(data, cfg.get("answer_field") or "answer") or raw
+    except Exception:
+        answer = raw
+    answer = str(answer).strip()
+    if not answer:
+        return {"status": "timeout", "agent": peer["name"], "answer": "",
+                "waited_sec": 0,
+                "note": f"{peer['name']} trả về rỗng qua platform."}
+    log.info("Agent %s trả lời qua platform (%d ký tự)", peer["name"], len(answer))
+    return {"status": "answered", "agent": peer["name"], "answer": answer,
+            "via": "platform", "waited_sec": 0}
+
+
 def ask(name: str, question: str, wait_sec: int | None = None) -> dict:
     """Gửi câu hỏi cho 1 agent rồi chờ trả lời.
+
+    Ưu tiên đi qua **API platform** (không cần Jenny ở trong chat Lark của agent kia);
+    chưa khai/không gọi được thì mới quay về nhắn qua Lark.
 
     Trả về {"status": answered|timeout|error, "answer": str, "agent": str, ...}
     """
     from . import lark_user
 
     peer = get(name)
+    if peer:
+        pcfg = _platform_cfg()
+        transport = (peer.get("transport") or "").lower()
+        if pcfg.get("enabled") and transport != "lark_im":
+            res = _ask_platform(peer, question, pcfg)
+            if res["status"] == "answered":
+                return res
+            if transport == "platform":       # chỉ định rõ platform → không fallback
+                return res
+            log.warning("Hỏi %s qua platform không được (%s) — thử lại qua Lark",
+                        peer["name"], res.get("error", "")[:120])
     if not peer:
         return {"status": "error",
                 "error": f"Chưa có agent nào tên '{name}' trong config `peer_agents`."}
     chat_id = (peer.get("chat_id") or "").strip()
     if not chat_id:
-        return {"status": "error",
-                "error": f"Agent '{peer['name']}' chưa khai chat_id trong config."}
+        return {"status": "error", "agent": peer["name"],
+                "error": (f"Không có đường nào để hỏi '{peer['name']}': API platform chưa "
+                          "bật (config `platform_a2a.enabled`) và cũng chưa khai `chat_id` "
+                          "Lark trong `peer_agents`. Cần một trong hai.")}
 
     wait = int(wait_sec or peer.get("wait_sec") or DEFAULT_WAIT)
     my_id = ""

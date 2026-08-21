@@ -263,3 +263,51 @@ def test_doc_sheet_escape_dau_gach_dung():
 def test_col_letter_dung_quy_uoc_bang_tinh():
     from jenny import lark_user
     assert [lark_user._col_letter(n) for n in (1, 26, 27, 52)] == ["A", "Z", "AA", "AZ"]
+
+
+# ---------- A2A: ưu tiên platform, Lark chỉ là dự phòng ----------
+
+def test_ask_uu_tien_platform_khi_da_bat(fake_db, monkeypatch):
+    """Bật platform_a2a thì KHÔNG được đi qua Lark (không cần vào chat agent kia)."""
+    from jenny import peers
+    fake_db.configs["peer_agents"] = {"mino": {"role": "biên bản họp", "chat_id": "oc_x"}}
+    fake_db.configs["platform_a2a"] = {"enabled": True, "url": "https://p/v1/a2a/{agent}/ask"}
+    monkeypatch.setattr(peers, "_ask_platform",
+                        lambda peer, q, cfg: {"status": "answered", "agent": peer["name"],
+                                              "answer": "xong", "via": "platform",
+                                              "waited_sec": 0})
+    called = {"lark": False}
+    fake_lark = types.ModuleType("jenny.lark_user")
+    def _boom(*a, **k):
+        called["lark"] = True
+        raise AssertionError("không được nhắn Lark khi platform đã trả lời")
+    fake_lark.send_text = _boom
+    fake_lark.me = lambda: {"open_id": "ou_me"}
+    fake_lark.list_messages = lambda *a, **k: []
+    monkeypatch.setitem(sys.modules, "jenny.lark_user", fake_lark)
+
+    res = peers.ask("mino", "họp S&OP chốt gì?")
+    assert res["status"] == "answered" and res.get("via") == "platform"
+    assert called["lark"] is False
+
+
+def test_transport_platform_khong_fallback_sang_lark(fake_db, monkeypatch):
+    """Peer khai transport='platform' mà lỗi thì báo lỗi, KHÔNG lặng lẽ nhắn Lark."""
+    from jenny import peers
+    fake_db.configs["peer_agents"] = {
+        "mino": {"role": "biên bản họp", "chat_id": "oc_x", "transport": "platform"}}
+    fake_db.configs["platform_a2a"] = {"enabled": True, "url": "https://p/x"}
+    monkeypatch.setattr(peers, "_ask_platform",
+                        lambda peer, q, cfg: {"status": "error", "agent": peer["name"],
+                                              "error": "platform trả 403"})
+    res = peers.ask("mino", "hỏi gì đó")
+    assert res["status"] == "error" and "403" in res["error"]
+
+
+def test_khong_co_duong_nao_thi_bao_ro_ca_hai(fake_db):
+    from jenny import peers
+    fake_db.configs["peer_agents"] = {"mino": {"role": "biên bản họp"}}
+    fake_db.configs["platform_a2a"] = {"enabled": False}
+    res = peers.ask("mino", "x")
+    assert res["status"] == "error"
+    assert "platform_a2a" in res["error"] and "chat_id" in res["error"]

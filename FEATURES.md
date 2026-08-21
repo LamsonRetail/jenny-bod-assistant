@@ -120,7 +120,10 @@ Jenny **không tự gỡ băng nữa**. Biên bản họp do agent **Mino** ph�
 
 **Giao tiếp agent-với-agent (A2A)** ⭐
 
-*Jenny hỏi agent khác (outbound)*: tool `ask_agent(agent, question, wait_sec)` gửi câu hỏi vào chat của agent kia (tag nếu có `open_id`) rồi **chờ đồng bộ** tin trả lời đầu tiên không phải của Jenny; timeout thì báo rõ. Danh bạ ở config `peer_agents` — thêm agent mới không cần deploy. Xem bằng `peer_agents_list`.
+*Jenny hỏi agent khác (outbound)* — tool `ask_agent(agent, question, wait_sec)`, **2 transport, ưu tiên platform**:
+  1. **Qua API platform** (config `platform_a2a`) — đường đúng, **không cần Jenny vào chat Lark của agent kia**. ⚠️ Đang tắt vì **Caddy của platform trả 403 mọi path** ngoài `/health`, `/v1/traces`, `/v1/policy/check` — cần đội platform mở path A2A cho agent token. Khai `url` + bật `enabled` là chạy, không phải sửa code.
+  2. **Qua Lark IM** (dự phòng) — gửi vào chat của agent kia rồi **chờ đồng bộ** tin trả lời đầu tiên không phải của Jenny. Cần Jenny là thành viên chat đó.
+  Peer khai `transport: platform` thì lỗi là báo lỗi, **không lặng lẽ fallback** sang Lark. Danh bạ ở config `peer_agents`; xem bằng `peer_agents_list`.
 
 *Agent khác hỏi Jenny (inbound)*: bản khai năng lực nằm ở **`capabilities.py`** — một nguồn cho cả 3 nơi:
 - **`my_capabilities(format)`** ⭐ — Jenny tự trả lời "tôi làm được gì / hỏi tôi thế nào" ngay trong chat. **Đây là đường A2A chính**, vì agent khác chỉ cần nhắn Lark là hỏi được.
